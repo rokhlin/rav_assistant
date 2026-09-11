@@ -98,45 +98,242 @@ cp data/config/.env.example data/config/.env
 
 ---
 
-## 🚀 Развертывание на ZimaOS / ZimaBoard
+## 🐳 Запуск в Docker: Подробная инструкция
 
-### Способ 1: Через SSH-терминал ZimaOS (Рекомендуется)
+Приложение упаковано в легковесный Docker-образ на базе `python:3.11-slim` со встроенным `ffmpeg` для обработки голосовых сообщений и поддержкой multi-arch (`linux/amd64` и `linux/arm64` — ZimaBoard, Raspberry Pi, VPS, локальный ПК).
 
-1. Подключитесь к вашей ZimaBoard по SSH:
+---
+
+### 📋 1. Предварительные требования
+
+Перед запуском убедитесь, что на целевой системе установлены:
+- **Docker Engine** (версия 20.10+) и **Docker Compose** (рекомендуется плагин `docker compose` v2).
+  ```bash
+  docker --version
+  docker compose version
+  ```
+- **Telegram Bot Token**: создайте бота в Telegram через [@BotFather](https://t.me/BotFather) и скопируйте токен вида `123456789:ABCdef...`.
+- **API-ключ искусственного интеллекта**:
+  - **Google Gemini** *(рекомендуется)*: бесплатный ключ в [Google AI Studio](https://aistudio.google.com/).
+  - или **OpenAI**: ключ на платформе [OpenAI Platform](https://platform.openai.com/).
+
+---
+
+### 📁 2. Подготовка файлов и окружения
+
+1. **Склонируйте репозиторий** (или загрузите архив с проектом):
    ```bash
-   ssh root@<IP-адрес-ZimaBoard>
+   git clone https://github.com/rokhlin/helper_translater.git
+   cd helper_translater
    ```
-2. Перейдите в директорию проектов и склонируйте/скопируйте проект:
+
+2. **Создайте необходимые локальные директории**:
+   Контейнер монтирует три директории на хосте для сохранения настроек, загруженных документов и Markdown-заметок:
    ```bash
-   mkdir -p /DATA/AppData/helper_translater
-   cd /DATA/AppData/helper_translater
+   mkdir -p data/config data/cloud data/notes
    ```
-3. Скопируйте файлы проекта в эту папку.
-4. Создайте и настройте конфигурационный файл `data/config/.env`:
+
+3. **Создайте и настройте файл переменных окружения `.env`**:
+   Скопируйте эталонный шаблон `.env.example` в `data/config/.env`:
    ```bash
-   mkdir -p data/config
    cp .env.example data/config/.env
+   ```
+   > [!IMPORTANT]
+   > Файл конфигурации должен находиться именно по пути **`data/config/.env`** (либо в корне проекта как `.env`).
+
+   Откройте файл в любом текстовом редакторе (например, `nano`):
+   ```bash
    nano data/config/.env
    ```
-5. Запустите контейнер:
+   Заполните обязательные параметры:
+   ```dotenv
+   TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+   ALLOWED_USER_IDS=123456789              # Ваш Telegram ID (узнать можно у @userinfobot)
+   AI_PROVIDER=gemini
+   GEMINI_API_KEY=AIzaSyD-Ваш-Ключ-Gemini
+   GEMINI_MODEL=gemini-2.5-flash
+   DEFAULT_ACTION=analyze                  # Режим по умолчанию при отправке фото/документов
+   TZ=Europe/Moscow
+   ```
+
+4. **Настройте права доступа (для Linux / ZimaOS)**:
+   Чтобы контейнер без ошибок записывал файлы в `data/cloud` и `data/notes`:
+   ```bash
+   chmod -R 775 data
+   ```
+
+---
+
+### 🚀 3. Варианты запуска контейнера
+
+Выберите наиболее удобный для вас вариант запуска:
+
+#### Вариант А: Запуск через Docker Compose (Рекомендуемый)
+
+Файл [`docker-compose.yml`](file:///c:/projects/helper_translater/docker-compose.yml) уже настроен со всеми монтируемыми томами, автоматическим перезапуском и ротацией логов.
+
+1. **Сборка образа и запуск в фоновом режиме (daemon)**:
    ```bash
    docker compose up -d --build
    ```
-6. Проверьте логи работы:
+   *Параметр `--build` гарантирует сборку актуального локального кода.*
+
+2. **Проверка статуса контейнера**:
    ```bash
-   docker compose logs -f
+   docker compose ps
+   ```
+   Вы должны увидеть сервис `helper_translater_bot` со статусом `Up`.
+
+3. **Просмотр логов в реальном времени**:
+   ```bash
+   docker compose logs -f telegram-helper-bot
+   ```
+   *(Для выхода из просмотра логов нажмите `Ctrl + C`).*
+
+4. **Управление контейнером**:
+   - **Остановить контейнер**:
+     ```bash
+     docker compose down
+     ```
+   - **Перезапустить бота** (например, после изменения `.env`):
+     ```bash
+     docker compose restart
+     ```
+   - **Обновить бота до последней версии из Git**:
+     ```bash
+     git pull
+     docker compose up -d --build
+     ```
+
+---
+
+#### Вариант Б: Запуск напрямую через Docker CLI (`docker run`)
+
+Если вы предпочитаете управлять контейнером без Docker Compose:
+
+1. **Соберите Docker-образ вручную**:
+   ```bash
+   docker build -t helper_translater_bot:latest .
    ```
 
-### Способ 2: Через веб-интерфейс ZimaOS / CasaOS
+2. **Запустите контейнер с привязкой папок и файла конфигурации**:
+   - **Для Linux / macOS / ZimaOS (Bash)**:
+     ```bash
+     docker run -d \
+       --name helper_translater_bot \
+       --restart unless-stopped \
+       --env-file ./data/config/.env \
+       -e TZ=Europe/Moscow \
+       -v "$(pwd)/data/config:/app/data/config" \
+       -v "$(pwd)/data/cloud:/app/data/cloud" \
+       -v "$(pwd)/data/notes:/app/data/notes" \
+       helper_translater_bot:latest
+     ```
+   - **Для Windows (PowerShell)**:
+     ```powershell
+     docker run -d `
+       --name helper_translater_bot `
+       --restart unless-stopped `
+       --env-file ./data/config/.env `
+       -e TZ=Europe/Moscow `
+       -v "${PWD}/data/config:/app/data/config" `
+       -v "${PWD}/data/cloud:/app/data/cloud" `
+       -v "${PWD}/data/notes:/app/data/notes" `
+       helper_translater_bot:latest
+     ```
 
-1. Откройте панель управления ZimaOS в браузере (`http://<IP-ZimaBoard>`).
-2. Нажмите **App Store** -> **Custom Install** (Пользовательская установка) в правом верхнем углу.
-3. Выберите **Import** (Импорт) и вставьте содержимое файла `docker-compose.yml`.
-4. В разделе **Environment Variables** введите ваши переменные из `.env` (`TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, etc.).
-5. В разделе **Volumes** настройте пути:
-   - Папка для файлов: `/DATA/Documents/TelegramCloud` -> `/app/data/cloud`
-   - Папка для заметок: `/DATA/Documents/ObsidianVault` -> `/app/data/notes`
-6. Нажмите **Submit / Install**.
+3. **Команды управления**:
+   ```bash
+   # Просмотр логов
+   docker logs -f helper_translater_bot
+
+   # Остановка
+   docker stop helper_translater_bot
+
+   # Перезапуск
+   docker restart helper_translater_bot
+
+   # Удаление контейнера
+   docker rm -f helper_translater_bot
+   ```
+
+---
+
+#### Вариант В: Запуск готового Multi-Arch образа из GitHub Packages (GHCR)
+
+Если вы не хотите собирать образ из исходников (например, на сервере со слабой мощностью), используйте готовый предсобранный образ из GitHub Container Registry:
+
+1. **Скачайте актуальный образ**:
+   ```bash
+   docker pull ghcr.io/rokhlin/helper_translater:latest
+   ```
+
+2. **Запустите готовый образ одной командой**:
+   ```bash
+   docker run -d \
+     --name helper_translater_bot \
+     --restart unless-stopped \
+     --env-file ./data/config/.env \
+     -v "$(pwd)/data/config:/app/data/config" \
+     -v "$(pwd)/data/cloud:/app/data/cloud" \
+     -v "$(pwd)/data/notes:/app/data/notes" \
+     ghcr.io/rokhlin/helper_translater:latest
+   ```
+
+3. **Или используйте в `docker-compose.yml`**:
+   Замените секцию `build: .` на:
+   ```yaml
+   image: ghcr.io/rokhlin/helper_translater:latest
+   ```
+   и выполните `docker compose up -d`.
+
+---
+
+#### Вариант Г: Установка через Web-интерфейс ZimaOS / CasaOS / Portainer
+
+Если бот развертывается на домашнем сервере **ZimaBoard / ZimaOS**:
+
+1. Откройте веб-панель ZimaOS (`http://<IP-адрес-ZimaBoard>`).
+2. Перейдите в **App Store** ➔ в правом верхнем углу нажмите **Custom Install** (Пользовательская установка).
+3. Нажмите кнопку **Import** в левом верхнем углу модального окна и вставьте содержимое файла [`docker-compose.yml`](file:///c:/projects/helper_translater/docker-compose.yml).
+4. Настройте пути монтирования папок (**Volumes**):
+   - Хост `/DATA/AppData/helper_translater/config` ➔ Контейнер `/app/data/config`
+   - Хост `/DATA/Documents/TelegramCloud` ➔ Контейнер `/app/data/cloud` *(сюда будут сохраняться файлы)*
+   - Хост `/DATA/Documents/ObsidianVault` ➔ Контейнер `/app/data/notes` *(сюда будут записываться заметки `.md`)*
+5. В разделе **Environment Variables** добавьте переменные:
+   - `TELEGRAM_BOT_TOKEN`: ваш токен бота
+   - `GEMINI_API_KEY`: ваш ключ Gemini API
+   - `ALLOWED_USER_IDS`: ваш Telegram ID
+   - `TZ`: `Europe/Moscow`
+6. Нажмите **Submit / Install**. Контейнер автоматически скачается, настроится и запустится.
+
+---
+
+### 🔍 4. Проверка работы и мониторинг
+
+1. **Успешный запуск в логах**:
+   Выполните `docker compose logs -f` (или `docker logs -f helper_translater_bot`). При корректном старте вывод будет содержать:
+   ```text
+   [INFO] helper_bot: Команды меню бота успешно зарегистрированы в Telegram
+   [INFO] helper_bot: Запуск бота... Провайдер AI: gemini
+   [INFO] helper_bot: Папка облака: /app/data/cloud
+   [INFO] helper_bot: Папка заметок: /app/data/notes
+   ```
+2. **Проверка в Telegram**:
+   - Откройте вашего бота в Telegram и отправьте команду `/start`.
+   - Отправьте команду `/status` — бот пришлет сообщение с информацией о времени непрерывной работы (uptime), используемом AI-провайдере, свободной RAM и объеме свободного места на диске.
+
+---
+
+### 🛠 5. Частые проблемы и их решение (Troubleshooting)
+
+| Проблема / Ошибка | Причина | Решение |
+|---|---|---|
+| `Критическая ошибка: TELEGRAM_BOT_TOKEN не задан` | Контейнер не видит `.env` или токен пустой | Проверьте, что файл `data/config/.env` создан, не содержит пробелов вокруг `=` и смонтирован по пути `/app/data/config/.env`. |
+| `PermissionError: [Errno 13] Permission denied` | У пользователя в контейнере нет прав на запись в смонтированные папки хоста | Выполните на хосте `chmod -R 775 ./data` или `chown -R 1000:1000 ./data`. |
+| Бот не отвечает в Telegram при отправке сообщений | Ваш Telegram ID не указан в списке разрешенных пользователей | Если заполнена переменная `ALLOWED_USER_IDS`, бот игнорирует всех посторонних. Узнайте свой ID через [@userinfobot](https://t.me/userinfobot) и добавьте его в `.env`. Оставьте пустым, если бот должен отвечать всем. |
+| Ошибка вызова Gemini / OpenAI API | Неверный API-ключ или отсутствие доступа к сети/DNS | Проверьте валидность API ключа, лимиты в консоли провайдера и доступность внешних хостов из контейнера (`docker run --rm alpine ping -c 2 api.telegram.org`). |
+| Изменения в `.env` не вступили в силу | Переменные окружения считываются только при старте процесса | Перезапустите контейнер: `docker compose restart` (или `docker compose up -d` при изменении compose-файла). |
 
 ---
 
