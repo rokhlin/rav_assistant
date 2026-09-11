@@ -103,7 +103,8 @@ cp data/config/.env.example data/config/.env
 | `ALLOWED_USER_IDS` | Разрешенные ID пользователей (через запятую). Если пусто — бот публичный | `123456789,987654321` |
 | `AI_PROVIDER` | AI-провайдер: `gemini` (рекомендуется) или `openai` | `gemini` |
 | `GEMINI_API_KEY` | API-ключ Google AI Studio (для Gemini) | `AIzaSy...` |
-| `GEMINI_MODEL` | Модель Gemini для Vision, аудио и текста | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Модель Gemini для Vision, аудио и текста | `gemini-3.8-flash` |
+| `GEMINI_FALLBACK_MODELS` | Резервные модели через запятую при перегрузке (503/429) | `gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-flash-latest` |
 | `OPENAI_API_KEY` | API-ключ OpenAI (если выбран провайдер openai) | `sk-...` |
 | `DEFAULT_ACTION` | Действие по умолчанию при отправке документов | `analyze` |
 | `HOST_CONFIG_PATH` | Путь к папке config на сервере ZimaOS | `/DATA/AppData/helper_translater/config` или `./data/config` |
@@ -166,7 +167,7 @@ cp data/config/.env.example data/config/.env
    ALLOWED_USER_IDS=123456789              # Ваш Telegram ID (узнать можно у @userinfobot)
    AI_PROVIDER=gemini
    GEMINI_API_KEY=AIzaSyD-Ваш-Ключ-Gemini
-   GEMINI_MODEL=gemini-2.5-flash
+   GEMINI_MODEL=gemini-3.8-flash
    DEFAULT_ACTION=analyze                  # Режим по умолчанию при отправке фото/документов
    TZ=Europe/Moscow
    ```

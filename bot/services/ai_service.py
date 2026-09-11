@@ -158,21 +158,48 @@ class AIService:
                 "content": raw_text
             }
 
-    async def _generate_text(self, prompt: str) -> str:
-        if self.provider == "gemini" and self.gemini_client:
-            import asyncio
+    async def _call_gemini_with_fallback(self, contents: Any) -> str:
+        """
+        Выполняет вызов Gemini API с поддержкой каскадного fallback на младшие / альтернативные версии моделей.
+        Если выбранная модель перегружена (503 Service Unavailable), возвращает ошибку квоты или недоступна,
+        запрос автоматически повторяется для следующих моделей из fallback цепочки.
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        models = settings.gemini_models_chain
+        last_error = None
+
+        for idx, model in enumerate(models):
             try:
-                loop = asyncio.get_running_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: self.gemini_client.models.generate_content(
-                        model=settings.GEMINI_MODEL,
-                        contents=prompt
+                def _invoke(m=model):
+                    return self.gemini_client.models.generate_content(
+                        model=m,
+                        contents=contents
                     )
-                )
+
+                response = await loop.run_in_executor(None, _invoke)
+                if idx > 0:
+                    logger.warning(
+                        f"Основная модель недоступна. Запрос успешно выполнен с fallback-моделью: '{model}'"
+                    )
                 return response.text or ""
             except Exception as e:
-                logger.error(f"Gemini API error: {e}")
+                last_error = e
+                logger.warning(
+                    f"Ошибка Gemini API при вызове модели '{model}': {e}. "
+                    f"({'Пробуем следующую модель...' if idx < len(models) - 1 else 'Все fallback-модели исчерпаны.'})"
+                )
+                continue
+
+        logger.error(f"Все модели Gemini из fallback-цепочки {models} завершились ошибкой. Последняя ошибка: {last_error}")
+        raise last_error
+
+    async def _generate_text(self, prompt: str) -> str:
+        if self.provider == "gemini" and self.gemini_client:
+            try:
+                return await self._call_gemini_with_fallback(prompt)
+            except Exception as e:
+                logger.error(f"Gemini API error after fallback attempts: {e}")
                 raise
 
         elif self.openai_client:
@@ -186,24 +213,16 @@ class AIService:
             raise RuntimeError("Не настроен API ключ для AI провайдера (Gemini или OpenAI)!")
 
     async def _generate_vision(self, prompt: str, image_bytes: bytes, mime_type: str) -> str:
-        import asyncio
         if self.provider == "gemini" and self.gemini_client:
             from google.genai import types
-            loop = asyncio.get_running_loop()
+            contents = [
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                prompt
+            ]
             try:
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: self.gemini_client.models.generate_content(
-                        model=settings.GEMINI_MODEL,
-                        contents=[
-                            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                            prompt
-                        ]
-                    )
-                )
-                return response.text or ""
+                return await self._call_gemini_with_fallback(contents)
             except Exception as e:
-                logger.error(f"Gemini Vision API error: {e}")
+                logger.error(f"Gemini Vision API error after fallback attempts: {e}")
                 raise
 
         elif self.openai_client:

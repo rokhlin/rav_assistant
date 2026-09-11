@@ -18,20 +18,14 @@ class STTService:
         """
         if self.provider == "gemini" and ai_service.gemini_client:
             from google.genai import types
-            loop = asyncio.get_running_loop()
             prompt = get_text("ai_prompt_transcribe", lang)
+            contents = [
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                prompt
+            ]
             try:
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: ai_service.gemini_client.models.generate_content(
-                        model=settings.GEMINI_MODEL,
-                        contents=[
-                            types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                            prompt
-                        ]
-                    )
-                )
-                return (response.text or "").strip()
+                text = await ai_service._call_gemini_with_fallback(contents)
+                return text.strip()
             except Exception as e:
                 logger.error(f"Gemini Audio Transcription error: {e}")
                 raise RuntimeError(f"Ошибка транскрибации Gemini: {e}")

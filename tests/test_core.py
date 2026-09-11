@@ -313,6 +313,79 @@ async def test_ai_service_prompts_multilingual(monkeypatch):
     await service.analyze_document_text("חשבונית 123", lang="he")
     assert "סוג המסמך" in captured_prompts[-1]
 
+def test_gemini_models_chain_config():
+    from config import Settings
+    
+    # 1. Custom model and custom fallbacks
+    s1 = Settings(
+        GEMINI_MODEL="gemini-3.8-flash",
+        GEMINI_FALLBACK_MODELS="gemini-3.7-flash,gemini-3.6-flash"
+    )
+    chain1 = s1.gemini_models_chain
+    assert chain1[0] == "gemini-3.8-flash"
+    assert "gemini-3.7-flash" in chain1
+    assert "gemini-3.6-flash" in chain1
+    assert len(chain1) == len(set(chain1))  # No duplicates
+
+    # 2. Duplicate entries stripped
+    s2 = Settings(
+        GEMINI_MODEL="gemini-3.8-flash",
+        GEMINI_FALLBACK_MODELS="gemini-3.8-flash,gemini-3.7-flash"
+    )
+    chain2 = s2.gemini_models_chain
+    assert chain2[0] == "gemini-3.8-flash"
+    assert chain2.count("gemini-3.8-flash") == 1
+
+@pytest.mark.asyncio
+async def test_gemini_fallback_on_503_error(monkeypatch):
+    from unittest.mock import MagicMock
+    from bot.services.ai_service import AIService
+    from config import settings
+
+    service = AIService()
+    mock_client = MagicMock()
+    service.gemini_client = mock_client
+    service.provider = "gemini"
+
+    calls = []
+    def fake_generate_content(model, contents):
+        calls.append(model)
+        if model == settings.gemini_models_chain[0]:
+            raise Exception("503 UNAVAILABLE: This model is currently experiencing high demand.")
+        res = MagicMock()
+        res.text = f"Success from {model}"
+        return res
+
+    mock_client.models.generate_content.side_effect = fake_generate_content
+
+    result = await service._call_gemini_with_fallback("Test prompt")
+    
+    # Verify fallback was used
+    assert len(calls) == 2
+    assert calls[0] == settings.gemini_models_chain[0]
+    assert calls[1] == settings.gemini_models_chain[1]
+    assert result == f"Success from {settings.gemini_models_chain[1]}"
+
+@pytest.mark.asyncio
+async def test_gemini_fallback_all_fail(monkeypatch):
+    from unittest.mock import MagicMock
+    from bot.services.ai_service import AIService
+    from config import settings
+
+    service = AIService()
+    mock_client = MagicMock()
+    service.gemini_client = mock_client
+    service.provider = "gemini"
+
+    mock_client.models.generate_content.side_effect = Exception("Service error")
+
+    with pytest.raises(Exception) as exc_info:
+        await service._call_gemini_with_fallback("Test prompt")
+    
+    assert "Service error" in str(exc_info.value)
+    # Check that all models in the chain were attempted
+    assert mock_client.models.generate_content.call_count == len(settings.gemini_models_chain)
+
 
 
 

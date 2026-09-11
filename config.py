@@ -19,7 +19,8 @@ class Settings(BaseSettings):
 
     # Gemini
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_FALLBACK_MODELS: str = "gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-flash-latest,gemini-3.1-flash-lite"
 
     # OpenAI
     OPENAI_API_KEY: Optional[str] = None
@@ -37,6 +38,32 @@ class Settings(BaseSettings):
     # Defaults
     DEFAULT_ACTION: str = "analyze"  # "analyze" (Анализ и перевод) or "translate"
     TARGET_LANGUAGE: str = "Русский"
+
+    @property
+    def gemini_models_chain(self) -> List[str]:
+        chain: List[str] = []
+        if self.GEMINI_MODEL and self.GEMINI_MODEL.strip():
+            chain.append(self.GEMINI_MODEL.strip())
+
+        fallback_str = self.GEMINI_FALLBACK_MODELS or ""
+        for m in fallback_str.split(","):
+            m_clean = m.strip()
+            if m_clean and m_clean not in chain:
+                chain.append(m_clean)
+
+        # Резервный список моделей на случай перегрузки или недоступности
+        default_chain = [
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-flash-latest",
+            "gemini-3.1-flash-lite",
+        ]
+        for m in default_chain:
+            if m not in chain:
+                chain.append(m)
+        return chain
 
     @property
     def allowed_users(self) -> List[int]:
