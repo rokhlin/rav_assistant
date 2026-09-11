@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     STORAGE_CLOUD_PATH: str = "data/cloud"
     STORAGE_NOTES_PATH: str = "data/notes"
 
+    # Web UI / Status Dashboard (for ZimaOS / CasaOS)
+    WEB_PORT: int = 8080
+    ENABLE_WEB_STATUS: bool = True
+
     # Defaults
     DEFAULT_ACTION: str = "analyze"  # "analyze" (Анализ и перевод) or "translate"
     TARGET_LANGUAGE: str = "Русский"

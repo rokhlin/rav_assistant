@@ -265,7 +265,7 @@ cp data/config/.env.example data/config/.env
 
 1. **Скачайте актуальный образ**:
    ```bash
-   docker pull ghcr.io/rokhlin/helper_translater:latest
+   docker pull ghcr.io/rokhlin/rav_assistant:latest
    ```
 
 2. **Запустите готовый образ одной командой**:
@@ -277,13 +277,13 @@ cp data/config/.env.example data/config/.env
      -v "$(pwd)/data/config:/app/data/config" \
      -v "$(pwd)/data/cloud:/app/data/cloud" \
      -v "$(pwd)/data/notes:/app/data/notes" \
-     ghcr.io/rokhlin/helper_translater:latest
+     ghcr.io/rokhlin/rav_assistant:latest
    ```
 
 3. **Или используйте в `docker-compose.yml`**:
    Замените секцию `build: .` на:
    ```yaml
-   image: ghcr.io/rokhlin/helper_translater:latest
+   image: ghcr.io/rokhlin/rav_assistant:latest
    ```
    и выполните `docker compose up -d`.
 
@@ -296,22 +296,30 @@ cp data/config/.env.example data/config/.env
 1. Откройте веб-панель ZimaOS (`http://<IP-адрес-ZimaBoard>`).
 2. Перейдите в **App Store** ➔ в правом верхнем углу нажмите **Custom Install** (Пользовательская установка).
 3. Нажмите кнопку **Import** в левом верхнем углу модального окна и вставьте содержимое файла [`docker-compose.yml`](file:///c:/projects/helper_translater/docker-compose.yml).
-4. Настройте пути монтирования папок (**Volumes**):
+   > [!NOTE]
+   > Благодаря блоку `x-casaos` и секции `ports`, ZimaOS автоматически заполнит порт веб-интерфейса (`8080`), название и иконку бота.
+4. Проверьте проброс портов (**Ports**):
+   - Хост `8080` ➔ Контейнер `8080` (веб-дашборд статуса и мониторинга)
+5. Настройте пути монтирования папок (**Volumes**):
    - Хост `/DATA/AppData/helper_translater/config` ➔ Контейнер `/app/data/config`
    - Хост `/DATA/Documents/TelegramCloud` ➔ Контейнер `/app/data/cloud` *(сюда будут сохраняться файлы)*
    - Хост `/DATA/Documents/ObsidianVault` ➔ Контейнер `/app/data/notes` *(сюда будут записываться заметки `.md`)*
-5. В разделе **Environment Variables** добавьте переменные:
+6. В разделе **Environment Variables** добавьте переменные:
    - `TELEGRAM_BOT_TOKEN`: ваш токен бота
    - `GEMINI_API_KEY`: ваш ключ Gemini API
    - `ALLOWED_USER_IDS`: ваш Telegram ID
    - `TZ`: `Europe/Moscow`
-6. Нажмите **Submit / Install**. Контейнер автоматически скачается, настроится и запустится.
+7. Нажмите **Submit / Install**. Контейнер автоматически скачается, настроится и запустится.
+   При клике на карточку приложения на рабочем столе ZimaOS откроется страница статуса и мониторинга бота (`http://<IP-ZimaBoard>:8080`).
 
 ---
 
 ### 🔍 4. Проверка работы и мониторинг
 
-1. **Успешный запуск в логах**:
+1. **Веб-интерфейс мониторинга**:
+   Откройте в браузере `http://<IP-ZimaBoard>:8080` — отобразится дашборд с Uptime, потреблением памяти, статусом AI-провайдера, количеством сохраненных файлов и заметок. Также доступен эндпоинт здоровья `/health`.
+
+2. **Логи контейнера**:
    Выполните `docker compose logs -f` (или `docker logs -f helper_translater_bot`). При корректном старте вывод будет содержать:
    ```text
    [INFO] helper_bot: Команды меню бота успешно зарегистрированы в Telegram

@@ -55,9 +55,22 @@ async def main():
     logger.info(f"Папка облака: {settings.cloud_path}")
     logger.info(f"Папка заметок: {settings.notes_path}")
 
-    # Удаление старых обновлений и запуск polling
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    # Запуск легковесного веб-сервера статуса (для ZimaOS / CasaOS)
+    web_runner = None
+    if settings.ENABLE_WEB_STATUS:
+        try:
+            from bot.services.web_server import start_web_server
+            web_runner = await start_web_server(port=settings.WEB_PORT)
+        except Exception as e:
+            logger.warning(f"Не удалось запустить веб-сервер статуса: {e}")
+
+    try:
+        # Удаление старых обновлений и запуск polling
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+    finally:
+        if web_runner:
+            await web_runner.cleanup()
 
 if __name__ == "__main__":
     try:

@@ -5,11 +5,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/rokhlin/helper_translater_bot:latest
+    image: ghcr.io/rokhlin/rav_assistant:latest
     container_name: helper_translater_bot
     restart: unless-stopped
+    ports:
+      - "3031:8080"
     environment:
       - TZ=${TZ:-UTC}
+      - WEB_PORT=8080
     volumes:
       # Папка конфигурации и .env
       - ./data/config:/app/data/config
@@ -22,3 +25,21 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: telegram-helper-bot
+  author: rokhlin
+  category: Utilities
+  description:
+    en_us: Telegram Assistant for Document Analysis, Translation, Cloud Storage, and Markdown Notes.
+    ru_ru: AI Telegram-ассистент для анализа документов, перевода, облачного хранилища и заметок для ZimaOS / CasaOS.
+  developer: rokhlin
+  icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/telegram.png
+  port_map: "8080"
+  scheme: http
+  title:
+    en_us: Telegram Helper Bot
+    ru_ru: Telegram Helper Bot

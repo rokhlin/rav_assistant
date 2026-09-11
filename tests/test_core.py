@@ -104,4 +104,22 @@ def test_config_env_path(tmp_path):
     assert custom_settings.DEFAULT_ACTION == "translate"
     assert custom_settings.TARGET_LANGUAGE == "Немецкий"
 
+@pytest.mark.asyncio
+async def test_web_server_endpoints():
+    from bot.services.web_server import handle_dashboard, handle_health
+    from aiohttp import web
+    
+    # Dashboard HTML
+    req = web.Request
+    resp_dashboard = await handle_dashboard(None)
+    assert resp_dashboard.status == 200
+    assert resp_dashboard.content_type == "text/html"
+    assert "Telegram Helper Bot" in resp_dashboard.text
+
+    # Health JSON
+    resp_health = await handle_health(None)
+    assert resp_health.status == 200
+    assert resp_health.content_type == "application/json"
+
+
 
