@@ -27,8 +27,7 @@ async def _process_and_reply(
     lang: str = "ru"
 ):
     """
-    Универсальная обработка контента (изображение/текст/документ/PDF)
-    в зависимости от выбранного действия (analyze или translate) и языка.
+    Universal content processing (image/text/doc/pdf) based on action and language.
     """
     target_lang_name = get_target_language_name(lang)
     wait_text = (
@@ -83,36 +82,37 @@ async def _process_and_reply(
             await safe_edit_text(status_msg, get_text("err_cannot_extract", lang))
             return
 
-        # Инлайн-кнопки под ответом на выбранном языке
+        # Inline action buttons in selected language
         reply_kb = get_media_actions_keyboard(file_type=content_type, current_action=action, lang=lang)
         await send_chunked_response(
             message=message,
             status_msg=status_msg,
             full_text=result,
-            reply_markup=reply_kb
+            reply_markup=reply_kb,
+            lang=lang
         )
 
     except Exception as e:
-        logger.error(f"Ошибка при обработке контента: {e}", exc_info=True)
+        logger.error(f"Error processing content: {e}", exc_info=True)
         await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
 
 @router.message(F.photo)
 async def handle_photo(message: Message, bot: Bot, state: FSMContext, lang: str = "ru"):
     """
-    Обработка фотографий и изображений.
-    По умолчанию выполняется 'Анализ и перевод' на выбранный язык.
+    Handle photos and images.
+    Defaults to document analysis and translation in the selected language.
     """
     current_state = await state.get_state()
     custom_instruction = message.caption or None
 
-    photo = message.photo[-1]  # Берем максимальное разрешение
+    photo = message.photo[-1]  # Highest resolution
     file_info = await bot.get_file(photo.file_id)
     
     file_stream = io.BytesIO()
     await bot.download_file(file_info.file_path, destination=file_stream)
     image_bytes = file_stream.getvalue()
 
-    # Сохраняем в FSM контекст на случай нажатия кнопок под сообщением
+    # Cache in FSM context for action buttons
     await state.update_data(
         last_file_bytes=image_bytes.hex(),
         last_filename="photo.jpg",
@@ -122,7 +122,7 @@ async def handle_photo(message: Message, bot: Bot, state: FSMContext, lang: str 
     )
 
     if current_state == BotStates.waiting_for_save:
-        # Режим сохранения
+        # Direct save mode
         saved = await storage_service.save_to_cloud(image_bytes, "photo.jpg")
         await message.answer(
             get_text("saved_photo_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb']),
@@ -148,8 +148,8 @@ async def handle_photo(message: Message, bot: Bot, state: FSMContext, lang: str 
 @router.message(F.document)
 async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: str = "ru"):
     """
-    Обработка документов (PDF, DOCX, изображения как файлы).
-    По умолчанию выполняется 'Анализ и перевод'.
+    Handle documents (PDF, DOCX, images sent as files).
+    Defaults to document analysis and translation.
     """
     current_state = await state.get_state()
     doc = message.document
@@ -162,7 +162,7 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
     await bot.download_file(file_info.file_path, destination=file_stream)
     file_bytes = file_stream.getvalue()
 
-    # Сохранение в облако, если активен режим сохранения
+    # Save to cloud if save mode is active
     if current_state == BotStates.waiting_for_save:
         saved = await storage_service.save_to_cloud(file_bytes, filename)
         await message.answer(
@@ -184,10 +184,10 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
         try:
             text_extracted, pages = DocParser.extract_from_pdf(file_bytes)
             if not text_extracted or not text_extracted.strip():
-                logger.info("PDF не содержит встроенного текстового слоя (скан), отправляем на мультимодальный анализ")
+                logger.info("PDF has no embedded text layer (scan), routing to multimodal analysis")
                 text_extracted = None
         except Exception as e:
-            logger.warning(f"Ошибка чтения текстового слоя PDF ({e}), передаем файл напрямую модели")
+            logger.warning(f"Failed to read PDF text layer ({e}), passing raw file directly to model")
             text_extracted = None
 
     elif ext in ["docx", "doc"] or "word" in mime or "officedocument" in mime:
@@ -202,12 +202,12 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
         content_type = "image"
         image_bytes = file_bytes
     else:
-        # Попытка прочитать как текст
+        # Attempt to decode as plain text
         try:
             text_extracted = file_bytes.decode("utf-8")
             content_type = "text"
         except Exception:
-            # Если неизвестный бинарный файл — сохраняем в облако
+            # If unknown binary file, save directly to cloud
             saved = await storage_service.save_to_cloud(file_bytes, filename)
             await message.answer(
                 get_text("saved_unknown_file", lang, ext=ext, filename=saved['filename']),
@@ -215,7 +215,7 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
             )
             return
 
-    # Кэшируем данные в FSM для кнопок
+    # Cache data in FSM for action buttons
     await state.update_data(
         last_file_bytes=file_bytes.hex() if len(file_bytes) < 15 * 1024 * 1024 else None,
         last_filename=filename,
@@ -242,13 +242,13 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
 @router.message(F.text, ~F.text.startswith("/"))
 async def handle_plain_text(message: Message, state: FSMContext, lang: str = "ru"):
     """
-    Обработка обычного текстового сообщения без команды.
-    По умолчанию выполняется 'Анализ и перевод' (или 'Перевод' если активен режим перевода).
+    Handle plain text messages without command.
+    Defaults to document analysis and translation (or pure translation if in translation state).
     """
     current_state = await state.get_state()
     text = message.text.strip()
 
-    # Игнорируем нажатия на кнопки меню на любом из поддерживаемых языков
+    # Ignore menu button presses in all supported languages
     if text in ALL_MENU_BUTTONS:
         return
 

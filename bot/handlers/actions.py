@@ -30,7 +30,7 @@ async def callback_set_language(query: CallbackQuery, lang: str = "ru"):
     user_settings.set_language(user_id, new_lang)
     lang_name = SUPPORTED_LANGUAGES[new_lang]
 
-    # Обновляем инлайн клавиатуру выбора языка (отмечаем галочкой новый)
+    # Update inline language selection keyboard (mark newly selected language)
     try:
         await safe_edit_text(
             query.message,
@@ -43,7 +43,7 @@ async def callback_set_language(query: CallbackQuery, lang: str = "ru"):
 
     await query.answer(f"✓ {lang_name}")
 
-    # Отправляем подтверждение и обновляем постоянное нижнее меню на новом языке
+    # Send confirmation and update persistent bottom menu in new language
     confirm_text = get_text("lang_switched", new_lang, lang_name=lang_name)
     await query.message.answer(
         confirm_text,
@@ -89,11 +89,12 @@ async def callback_translate(query: CallbackQuery, state: FSMContext, lang: str 
             message=query.message,
             status_msg=status_msg,
             full_text=result,
-            reply_markup=kb
+            reply_markup=kb,
+            lang=lang
         )
 
     except Exception as e:
-        logger.error(f"Ошибка повторного перевода: {e}", exc_info=True)
+        logger.error(f"Error during re-translation: {e}", exc_info=True)
         await safe_edit_text(status_msg, get_text("err_translation", lang, error=str(e)))
 
 @router.callback_query(F.data == "act_analyze")
@@ -143,11 +144,12 @@ async def callback_analyze(query: CallbackQuery, state: FSMContext, lang: str = 
             message=query.message,
             status_msg=status_msg,
             full_text=result,
-            reply_markup=kb
+            reply_markup=kb,
+            lang=lang
         )
 
     except Exception as e:
-        logger.error(f"Ошибка повторного анализа: {e}", exc_info=True)
+        logger.error(f"Error during re-analysis: {e}", exc_info=True)
         await safe_edit_text(status_msg, get_text("err_analysis", lang, error=str(e)))
 
 @router.callback_query(F.data == "act_save_cloud")
@@ -173,7 +175,7 @@ async def callback_save_cloud(query: CallbackQuery, state: FSMContext, lang: str
         )
         await query.message.reply(msg_text, parse_mode="Markdown")
     except Exception as e:
-        logger.error(f"Ошибка сохранения в облако через кнопку: {e}")
+        logger.error(f"Error saving to cloud via button: {e}")
         await query.answer(f"Error: {e}", show_alert=True)
 
 @router.callback_query(F.data == "act_save_note")
@@ -206,5 +208,5 @@ async def callback_save_note(query: CallbackQuery, state: FSMContext, lang: str 
         )
         await query.message.reply(msg_text, parse_mode="Markdown")
     except Exception as e:
-        logger.error(f"Ошибка создания заметки из сообщения: {e}")
+        logger.error(f"Error creating note from message: {e}")
         await query.answer(f"Error: {e}", show_alert=True)

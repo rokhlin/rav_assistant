@@ -26,7 +26,7 @@ class AuthMiddleware(BaseMiddleware):
             user_id = event.from_user.id
 
         if user_id and user_id not in allowed:
-            logger.warning(f"Попытка несанкционированного доступа от user_id={user_id}")
+            logger.warning(f"Unauthorized access attempt from user_id={user_id}")
             lang = user_settings.get_language(user_id)
             if isinstance(event, Message):
                 await event.answer(get_text("err_auth_message", lang))

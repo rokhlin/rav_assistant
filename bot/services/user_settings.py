@@ -2,7 +2,6 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
-from config import settings
 from bot.texts import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 
 logger = logging.getLogger(__name__)
@@ -12,7 +11,7 @@ class UserSettingsService:
         if config_file is not None:
             self.file_path = Path(config_file)
         else:
-            # По умолчанию в папке конфигурации
+            # Default configuration directory
             config_dir = Path("data/config")
             config_dir.mkdir(parents=True, exist_ok=True)
             self.file_path = config_dir / "user_settings.json"
@@ -26,7 +25,7 @@ class UserSettingsService:
                 with open(self.file_path, "r", encoding="utf-8") as f:
                     self._settings = json.load(f)
             except Exception as e:
-                logger.warning(f"Не удалось прочитать {self.file_path}: {e}")
+                logger.warning(f"Failed to read {self.file_path}: {e}")
                 self._settings = {}
         else:
             self._settings = {}
@@ -37,12 +36,11 @@ class UserSettingsService:
             with open(self.file_path, "w", encoding="utf-8") as f:
                 json.dump(self._settings, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"Ошибка сохранения настроек пользователей в {self.file_path}: {e}")
+            logger.error(f"Error saving user settings to {self.file_path}: {e}")
 
     def get_language(self, user_id: Optional[int]) -> str:
         """
-        Возвращает выбранный пользователем язык (ru, en, he).
-        По умолчанию — русский (ru).
+        Return user-selected language (ru, en, he). Default is ru.
         """
         if not user_id:
             return DEFAULT_LANGUAGE
@@ -55,7 +53,7 @@ class UserSettingsService:
 
     def set_language(self, user_id: int, lang: str):
         """
-        Сохраняет выбранный язык пользователя.
+        Save user-selected language.
         """
         if lang not in SUPPORTED_LANGUAGES:
             lang = DEFAULT_LANGUAGE
@@ -64,6 +62,6 @@ class UserSettingsService:
             self._settings[uid_str] = {}
         self._settings[uid_str]["language"] = lang
         self._save()
-        logger.info(f"Для user_id={user_id} установлен язык '{lang}'")
+        logger.info(f"Language '{lang}' set for user_id={user_id}")
 
 user_settings = UserSettingsService()

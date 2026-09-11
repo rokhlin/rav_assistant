@@ -21,7 +21,7 @@ from bot.texts import (
 router = Router(name="commands_router")
 
 def get_bot_commands(lang: str = "ru") -> List[BotCommand]:
-    """Возвращает список команд бота с локализованными описаниями."""
+    """Returns list of bot commands with localized descriptions."""
     return [
         BotCommand(command="analyze", description=get_text("cmd_desc_analyze", lang)),
         BotCommand(command="translate", description=get_text("cmd_desc_translate", lang)),

@@ -17,11 +17,11 @@ router = Router(name="notes_router")
 @router.message(F.audio)
 async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, lang: str = "ru"):
     """
-    Обработка голосового сообщения / аудиофайла для создания заметки на выбранном языке.
+    Process voice message or audio file to create note in the selected language.
     """
     status_msg = await message.answer(get_text("status_transcribing_note", lang), parse_mode="Markdown")
     try:
-        # Скачивание аудио
+        # Download audio
         audio_obj = message.voice or message.audio
         file_info = await bot.get_file(audio_obj.file_id)
         
@@ -29,16 +29,16 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, la
         await bot.download_file(file_info.file_path, destination=file_stream)
         audio_bytes = file_stream.getvalue()
 
-        # Транскрибация
+        # Transcription
         raw_text = await stt_service.transcribe(audio_bytes, mime_type="audio/ogg", lang=lang)
         if not raw_text:
             await safe_edit_text(status_msg, get_text("err_stt_failed", lang))
             return
 
-        # AI форматирование заметки на выбранном языке
+        # AI note structuring in the selected language
         structured = await ai_service.structure_note(raw_text, lang=lang)
 
-        # Сохранение в .md файл
+        # Save to .md file
         tag_voice = get_text("tag_voice", lang)
         saved_info = await storage_service.save_note(
             title=structured["title"],
@@ -63,13 +63,13 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, la
         await state.clear()
 
     except Exception as e:
-        logger.error(f"Ошибка обработки аудио/заметки: {e}", exc_info=True)
+        logger.error(f"Error processing audio note: {e}", exc_info=True)
         await safe_edit_text(status_msg, get_text("err_note_failed", lang, error=str(e)))
 
 @router.message(BotStates.waiting_for_note, F.text)
 async def handle_text_note_in_state(message: Message, state: FSMContext, lang: str = "ru"):
     """
-    Обработка текста в режиме создания заметки.
+    Process text message in note creation mode.
     """
     status_msg = await message.answer(get_text("status_formatting_note", lang), parse_mode="Markdown")
     try:
@@ -99,5 +99,5 @@ async def handle_text_note_in_state(message: Message, state: FSMContext, lang: s
         await state.clear()
 
     except Exception as e:
-        logger.error(f"Ошибка создания текстовой заметки: {e}", exc_info=True)
+        logger.error(f"Error creating text note: {e}", exc_info=True)
         await safe_edit_text(status_msg, get_text("err_note_failed", lang, error=str(e)))

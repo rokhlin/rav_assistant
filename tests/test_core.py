@@ -12,21 +12,21 @@ from bot.services.system_status import SystemStatusService
 
 @pytest.mark.asyncio
 async def test_storage_service(tmp_path):
-    # Настраиваем временные пути
+    # Configure temporary paths
     cloud_dir = tmp_path / "cloud"
     notes_dir = tmp_path / "notes"
     cloud_dir.mkdir(parents=True, exist_ok=True)
     notes_dir.mkdir(parents=True, exist_ok=True)
     service = StorageService(cloud_dir=cloud_dir, notes_dir=notes_dir)
 
-    # 1. Тест сохранения в облако
+    # 1. Test cloud storage saving
     dummy_data = b"Hello Cloud Storage!"
     res_cloud = await service.save_to_cloud(dummy_data, "test_file.txt")
     assert Path(res_cloud["path"]).exists()
     assert res_cloud["size_kb"] > 0
     assert "test_file.txt" in res_cloud["filename"]
 
-    # 2. Тест создания заметки .md
+    # 2. Test markdown note creation (.md)
     res_note = await service.save_note(
         title="Оплата счета за интернет",
         content="## Задачи\n- [ ] Оплатить до 15 числа\n- [ ] Сумма: 500 руб",
@@ -38,7 +38,7 @@ async def test_storage_service(tmp_path):
     assert note_path.exists()
     assert note_path.suffix == ".md"
     
-    # Проверка содержимого .md
+    # Verify .md file content
     content = note_path.read_text(encoding="utf-8")
     assert 'title: "Оплата счета за интернет"' in content
     assert 'tags: ["счета", "интернет"]' in content
@@ -46,7 +46,7 @@ async def test_storage_service(tmp_path):
     assert "Исходный текст / расшифровка" in content
 
 def test_docx_parser():
-    # Создаем тестовый .docx в памяти
+    # Create test .docx in memory
     doc = Document()
     doc.add_heading("Договор аренды", level=1)
     doc.add_paragraph("Арендатор обязуется внести оплату в размере 50 000 руб.")

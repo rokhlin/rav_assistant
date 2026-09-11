@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     ENABLE_WEB_STATUS: bool = True
 
     # Defaults
-    DEFAULT_ACTION: str = "analyze"  # "analyze" (Анализ и перевод) or "translate"
-    TARGET_LANGUAGE: str = "Русский"
+    DEFAULT_ACTION: str = "analyze"  # "analyze" or "translate"
+    TARGET_LANGUAGE: str = "Russian"
 
     @property
     def gemini_models_chain(self) -> List[str]:
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
             if m_clean and m_clean not in chain:
                 chain.append(m_clean)
 
-        # Резервный список моделей на случай перегрузки или недоступности
+        # Fallback list of models in case of overload or unavailability
         default_chain = [
             "gemini-3.8-flash",
             "gemini-3.7-flash",

@@ -1,4 +1,3 @@
-import os
 import re
 import shutil
 import logging
@@ -17,14 +16,14 @@ class StorageService:
 
     @staticmethod
     def _sanitize_filename(name: str) -> str:
-        """Очищает имя файла от опасных символов."""
+        """Sanitize filename from unsafe characters."""
         name = re.sub(r'[\\/*?:"<>|]', "", name)
         name = name.replace(" ", "_")
         return name[:100]
 
     async def save_to_cloud(self, file_bytes: bytes, original_filename: str) -> Dict[str, Any]:
         """
-        Сохраняет файл в папку облака с отметкой времени.
+        Save file to cloud directory with timestamp prefix.
         """
         now = datetime.now()
         timestamp = now.strftime("%Y%m%d_%H%M%S")
@@ -37,7 +36,7 @@ class StorageService:
 
         file_size_kb = len(file_bytes) / 1024
         size_kb_rounded = round(file_size_kb, 2) if file_size_kb >= 0.01 else 0.01
-        logger.info(f"Файл сохранен в облако: {destination} ({size_kb_rounded} KB)")
+        logger.info(f"File saved to cloud: {destination} ({size_kb_rounded} KB)")
 
         return {
             "filename": final_filename,
@@ -57,7 +56,7 @@ class StorageService:
         lang: str = "ru"
     ) -> Dict[str, Any]:
         """
-        Создает и сохраняет заметку в формате Markdown (.md).
+        Create and save note in Markdown format (.md).
         """
         from bot.texts import get_text
         now = datetime.now()
@@ -73,7 +72,7 @@ class StorageService:
         tags_list = tags or [default_tag]
         tags_yaml = ", ".join([f'"{t}"' for t in tags_list])
 
-        # Формирование содержимого Markdown
+        # Format Markdown content
         md_content = f"""---
 title: "{title}"
 date: "{timestamp_str}"
@@ -92,7 +91,7 @@ tags: [{tags_yaml}]
         async with aiofiles.open(destination, "w", encoding="utf-8") as f:
             await f.write(md_content)
 
-        logger.info(f"Заметка сохранена: {destination}")
+        logger.info(f"Note saved: {destination}")
 
         return {
             "filename": filename,
@@ -105,12 +104,12 @@ tags: [{tags_yaml}]
 
     def get_stats(self) -> Dict[str, Any]:
         """
-        Возвращает статистику по хранилищам (файлы, заметки, свободное место).
+        Return storage statistics (files, notes, free disk space).
         """
         cloud_files = list(self.cloud_dir.glob("*")) if self.cloud_dir.exists() else []
         notes_files = list(self.notes_dir.glob("*.md")) if self.notes_dir.exists() else []
 
-        # Свободное место
+        # Free disk space
         try:
             total, used, free = shutil.disk_usage(self.cloud_dir)
             disk_free_gb = round(free / (1024 ** 3), 2)

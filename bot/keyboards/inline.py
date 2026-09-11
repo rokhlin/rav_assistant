@@ -4,11 +4,11 @@ from bot.texts import get_text, SUPPORTED_LANGUAGES
 
 def get_media_actions_keyboard(file_type: str = "doc", current_action: Optional[str] = None, lang: str = "ru") -> InlineKeyboardMarkup:
     """
-    Создает инлайн-кнопки действий под отправленным файлом/картинкой на выбранном языке.
+    Creates inline action buttons under sent file or image in the selected language.
     """
     buttons = []
     
-    # Кнопки альтернативных действий
+    # Alternative action buttons
     row1 = []
     if current_action != "translate":
         row1.append(InlineKeyboardButton(text=get_text("inline_translate", lang), callback_data="act_translate"))
@@ -17,7 +17,7 @@ def get_media_actions_keyboard(file_type: str = "doc", current_action: Optional[
     if row1:
         buttons.append(row1)
 
-    # Вторая строка: Сохранение и создание заметки
+    # Second row: Save to cloud and save as note
     row2 = [
         InlineKeyboardButton(text=get_text("inline_save_cloud", lang), callback_data="act_save_cloud"),
         InlineKeyboardButton(text=get_text("inline_save_note", lang), callback_data="act_save_note")
@@ -27,14 +27,14 @@ def get_media_actions_keyboard(file_type: str = "doc", current_action: Optional[
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_cancel_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
-    """Кнопка отмены активного действия/состояния на выбранном языке."""
+    """Action cancellation button in the selected language."""
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=get_text("inline_cancel", lang), callback_data="act_cancel")]]
     )
 
 def get_language_keyboard(current_lang: str = "ru") -> InlineKeyboardMarkup:
     """
-    Клавиатура выбора языка интерфейса и перевода.
+    Interface and translation language selection keyboard.
     """
     lang_flags = {
         "ru": "🇷🇺",

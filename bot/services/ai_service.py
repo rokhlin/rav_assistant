@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from config import settings
 from bot.texts import get_text, get_target_language_name
 
@@ -20,18 +20,18 @@ class AIService:
                 from google import genai
                 if settings.GEMINI_API_KEY:
                     self.gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-                    logger.info("Инициализирован Google GenAI Client")
+                    logger.info("Initialized Google GenAI Client")
             except Exception as e:
-                logger.warning(f"Ошибка инициализации Gemini client: {e}")
+                logger.warning(f"Failed to initialize Gemini client: {e}")
 
         if self.provider == "openai" or settings.OPENAI_API_KEY:
             try:
                 from openai import AsyncOpenAI
                 if settings.OPENAI_API_KEY:
                     self.openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-                    logger.info("Инициализирован AsyncOpenAI Client")
+                    logger.info("Initialized AsyncOpenAI Client")
             except Exception as e:
-                logger.warning(f"Ошибка инициализации OpenAI client: {e}")
+                logger.warning(f"Failed to initialize OpenAI client: {e}")
 
     async def translate_text(self, text: str, target_lang: Optional[str] = None, lang: str = "ru") -> str:
         if not target_lang:
@@ -78,15 +78,15 @@ class AIService:
         if custom_instruction:
             prompt += get_text("ai_custom_instruction", lang, instruction=custom_instruction)
 
-        # Если провайдер Gemini - передаем PDF напрямую (поддерживает сканы, таблицы и изображения)
+        # Gemini supports PDF directly (scans, tables, and images)
         if (self.provider == "gemini" or self.gemini_client) and mime_type == "application/pdf":
             return await self._generate_vision(prompt, file_bytes, mime_type)
 
-        # Если есть извлеченный текст - анализируем текст
+        # If extracted text is available, analyze text
         if text_content and text_content.strip():
             return await self._generate_text(prompt + f"\n{text_content}")
 
-        # Если OpenAI и это PDF без текста (скан) - извлекаем изображения страниц
+        # For OpenAI with scanned PDF, extract page images
         if mime_type == "application/pdf":
             from bot.services.doc_parser import DocParser
             images = DocParser.extract_images_from_pdf(file_bytes)
@@ -125,7 +125,7 @@ class AIService:
 
     async def structure_note(self, raw_text: str, lang: str = "ru") -> Dict[str, Any]:
         """
-        Преобразует сырой текст или транскрипцию голоса в структурированную заметку.
+        Convert raw text or voice transcript into structured note.
         """
         prompt = get_text("ai_prompt_structure_note", lang, raw_text=raw_text)
 
@@ -133,7 +133,7 @@ class AIService:
         default_title = get_text("default_note_title", lang)
         default_tag = get_text("tag_note", lang)
         try:
-            # Очистка markdown разметки ```json ... ``` если вернулась
+            # Strip markdown code blocks ```json ... ``` if present
             cleaned = response_text.strip()
             if cleaned.startswith("```"):
                 lines = cleaned.split("\n")
@@ -150,7 +150,7 @@ class AIService:
                 "content": data.get("content", raw_text)
             }
         except Exception as e:
-            logger.warning(f"Не удалось распарсить JSON заметки ({e}), используем базовый шаблон")
+            logger.warning(f"Failed to parse note JSON ({e}), using default template")
             first_line = raw_text.strip().split("\n")[0][:40]
             return {
                 "title": first_line or default_title,
@@ -160,9 +160,9 @@ class AIService:
 
     async def _call_gemini_with_fallback(self, contents: Any) -> str:
         """
-        Выполняет вызов Gemini API с поддержкой каскадного fallback на младшие / альтернативные версии моделей.
-        Если выбранная модель перегружена (503 Service Unavailable), возвращает ошибку квоты или недоступна,
-        запрос автоматически повторяется для следующих моделей из fallback цепочки.
+        Execute Gemini API call with cascading fallback to secondary models.
+        If primary model is overloaded (503), quota-limited, or unavailable,
+        request retries automatically with subsequent models from fallback chain.
         """
         import asyncio
         loop = asyncio.get_running_loop()
@@ -180,18 +180,18 @@ class AIService:
                 response = await loop.run_in_executor(None, _invoke)
                 if idx > 0:
                     logger.warning(
-                        f"Основная модель недоступна. Запрос успешно выполнен с fallback-моделью: '{model}'"
+                        f"Primary model unavailable. Request succeeded with fallback model: '{model}'"
                     )
                 return response.text or ""
             except Exception as e:
                 last_error = e
                 logger.warning(
-                    f"Ошибка Gemini API при вызове модели '{model}': {e}. "
-                    f"({'Пробуем следующую модель...' if idx < len(models) - 1 else 'Все fallback-модели исчерпаны.'})"
+                    f"Gemini API error calling model '{model}': {e}. "
+                    f"({'Trying next fallback model...' if idx < len(models) - 1 else 'All fallback models exhausted.'})"
                 )
                 continue
 
-        logger.error(f"Все модели Gemini из fallback-цепочки {models} завершились ошибкой. Последняя ошибка: {last_error}")
+        logger.error(f"All Gemini models in fallback chain {models} failed. Last error: {last_error}")
         raise last_error
 
     async def _generate_text(self, prompt: str) -> str:
@@ -210,7 +210,7 @@ class AIService:
             )
             return response.choices[0].message.content or ""
         else:
-            raise RuntimeError("Не настроен API ключ для AI провайдера (Gemini или OpenAI)!")
+            raise RuntimeError("No API key configured for AI provider (Gemini or OpenAI)!")
 
     async def _generate_vision(self, prompt: str, image_bytes: bytes, mime_type: str) -> str:
         if self.provider == "gemini" and self.gemini_client:
@@ -248,6 +248,6 @@ class AIService:
             )
             return response.choices[0].message.content or ""
         else:
-            raise RuntimeError("Не настроен API ключ для работы с изображениями (Gemini или OpenAI)!")
+            raise RuntimeError("No API key configured for vision processing (Gemini or OpenAI)!")
 
 ai_service = AIService()

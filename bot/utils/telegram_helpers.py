@@ -2,13 +2,14 @@ import logging
 from typing import List, Optional
 from aiogram.types import Message, InlineKeyboardMarkup
 from aiogram.exceptions import TelegramBadRequest
+from bot.texts import get_text
 
 logger = logging.getLogger(__name__)
 
 def split_text(text: str, max_chunk_size: int = 3800) -> List[str]:
     """
-    Разбивает длинный текст на части по границам абзацев или строк,
-    чтобы не разрывать форматирование и предложения.
+    Splits long text into chunks by paragraph or line boundaries,
+    preserving formatting and sentences.
     """
     if not text:
         return []
@@ -21,13 +22,13 @@ def split_text(text: str, max_chunk_size: int = 3800) -> List[str]:
 
     lines = text.split("\n")
     for line in lines:
-        line_len = len(line) + 1  # учитываем перенос строки
+        line_len = len(line) + 1  # Account for newline
         if current_len + line_len > max_chunk_size and current_chunk:
             chunks.append("\n".join(current_chunk))
             current_chunk = []
             current_len = 0
 
-        # Если одна строка превышает max_chunk_size
+        # If a single line exceeds max_chunk_size
         if len(line) > max_chunk_size:
             words = line.split(" ")
             sub_chunk = []
@@ -58,8 +59,8 @@ async def safe_edit_text(
     parse_mode: Optional[str] = "Markdown"
 ) -> Message:
     """
-    Безопасное редактирование сообщения.
-    При ошибке парсинга Markdown автоматически отправляет как обычный текст без сбоя.
+    Safe message edit.
+    Falls back to plain text if Telegram Markdown parsing fails.
     """
     try:
         return await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -77,8 +78,8 @@ async def safe_answer(
     parse_mode: Optional[str] = "Markdown"
 ) -> Message:
     """
-    Безопасная отправка ответа на сообщение.
-    При ошибке парсинга Markdown автоматически отправляет как обычный текст.
+    Safe message answer.
+    Falls back to plain text if Telegram Markdown parsing fails.
     """
     try:
         return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -96,7 +97,8 @@ async def safe_reply(
     parse_mode: Optional[str] = "Markdown"
 ) -> Message:
     """
-    Безопасная отправка reply на сообщение.
+    Safe message reply.
+    Falls back to plain text if Telegram Markdown parsing fails.
     """
     try:
         return await message.reply(text, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -111,22 +113,24 @@ async def send_chunked_response(
     message: Message,
     status_msg: Message,
     full_text: str,
-    reply_markup: Optional[InlineKeyboardMarkup] = None
+    reply_markup: Optional[InlineKeyboardMarkup] = None,
+    lang: str = "ru"
 ):
     """
-    Разбивает длинный ответ нейросети на части и отправляет пользователю,
-    гарантируя устойчивость к ошибкам парсинга разметки Telegram.
+    Splits long AI response into chunks and sends them to the user,
+    handling markdown formatting resilience.
     """
     chunks = split_text(full_text, max_chunk_size=3800)
     if not chunks:
-        await safe_edit_text(status_msg, "❌ Пустой результат ответа нейросети.", reply_markup=reply_markup)
+        empty_error = get_text("err_empty_ai_response", lang)
+        await safe_edit_text(status_msg, empty_error, reply_markup=reply_markup)
         return
 
-    # Первую часть редактируем в текущем сообщении статуса
+    # Edit the first chunk into the status message
     first_markup = reply_markup if len(chunks) == 1 else None
     await safe_edit_text(status_msg, chunks[0], reply_markup=first_markup)
 
-    # Все последующие части отправляем новыми сообщениями
+    # Send any remaining chunks as new messages
     for i, chunk in enumerate(chunks[1:]):
         is_last = (i == len(chunks) - 2)
         markup = reply_markup if is_last else None

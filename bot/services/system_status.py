@@ -1,7 +1,7 @@
 import time
 import platform
 import psutil
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Dict, Any
 from config import settings
 from bot.services.storage_service import storage_service
@@ -17,11 +17,11 @@ class SystemStatusService:
 
         storage_stats = storage_service.get_stats()
         
-        # Память процесса
+        # Process memory
         process = psutil.Process()
         memory_mb = round(process.memory_info().rss / (1024 * 1024), 1)
 
-        # AI провайдер и активная модель
+        # AI provider and active model
         if settings.AI_PROVIDER.lower() == "gemini":
             provider_info = f"Google Gemini ({settings.GEMINI_MODEL})"
             api_ready = bool(settings.GEMINI_API_KEY)

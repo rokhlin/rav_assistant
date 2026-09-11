@@ -6,7 +6,7 @@ from bot.services.system_status import status_service
 logger = logging.getLogger("web_server")
 
 HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -213,43 +213,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         <div class="grid">
             <div class="stat-card">
-                <div class="stat-label">Время работы (Uptime)</div>
+                <div class="stat-label">Uptime</div>
                 <div class="stat-value">{{UPTIME}}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Потребление памяти (RAM)</div>
+                <div class="stat-label">Memory Usage (RAM)</div>
                 <div class="stat-value">{{MEMORY_MB}} MB</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">AI Движок</div>
+                <div class="stat-label">AI Engine</div>
                 <div class="stat-value">{{PROVIDER}}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Действие по умолчанию</div>
+                <div class="stat-label">Default Action</div>
                 <div class="stat-value">{{DEFAULT_ACTION}}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Файлы в Облаке (/cloud)</div>
-                <div class="stat-value">{{CLOUD_FILES_COUNT}} шт.</div>
+                <div class="stat-label">Cloud Files (/cloud)</div>
+                <div class="stat-value">{{CLOUD_FILES_COUNT}}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Заметки Markdown (/notes)</div>
-                <div class="stat-value">{{NOTES_COUNT}} шт.</div>
+                <div class="stat-label">Markdown Notes (/notes)</div>
+                <div class="stat-value">{{NOTES_COUNT}}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Свободно на диске</div>
+                <div class="stat-label">Free Disk Space</div>
                 <div class="stat-value">{{DISK_STR}}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">ОС / Платформа</div>
+                <div class="stat-label">OS / Platform</div>
                 <div class="stat-value" style="font-size: 13px;">{{SYSTEM}}</div>
             </div>
         </div>
 
         <div class="footer">
-            <span>Статус: <strong>Работает в фоновом режиме</strong></span>
+            <span>Status: <strong>Running in background</strong></span>
             <a href="https://t.me" target="_blank" class="btn-telegram">
-                Открыть в Telegram
+                Open in Telegram
             </a>
         </div>
     </div>
@@ -264,7 +264,7 @@ async def handle_dashboard(request: web.Request) -> web.Response:
     else:
         badge = '<span class="badge badge-warn"><span class="pulse"></span>API Key Required</span>'
 
-    disk_str = f"{s['disk_free_gb']} GB из {s['disk_total_gb']} GB" if s["disk_free_gb"] > 0 else "Недоступно"
+    disk_str = f"{s['disk_free_gb']} GB of {s['disk_total_gb']} GB" if s["disk_free_gb"] > 0 else "Unavailable"
 
     html = (
         HTML_TEMPLATE
@@ -302,5 +302,5 @@ async def start_web_server(port: int = 8080) -> web.AppRunner:
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logger.info(f"Веб-сервер статуса запущен на http://0.0.0.0:{port}")
+    logger.info(f"Status web server started at http://0.0.0.0:{port}")
     return runner

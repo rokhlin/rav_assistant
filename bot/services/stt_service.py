@@ -1,6 +1,5 @@
 import io
 import logging
-import asyncio
 from config import settings
 from bot.services.ai_service import ai_service
 from bot.texts import get_text
@@ -13,8 +12,8 @@ class STTService:
 
     async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/ogg", lang: str = "ru") -> str:
         """
-        Транскрибирует аудиозапись в текст.
-        Поддерживает Google Gemini Audio и OpenAI Whisper.
+        Transcribe audio recording to text.
+        Supports Google Gemini Audio and OpenAI Whisper.
         """
         if self.provider == "gemini" and ai_service.gemini_client:
             from google.genai import types
@@ -28,7 +27,7 @@ class STTService:
                 return text.strip()
             except Exception as e:
                 logger.error(f"Gemini Audio Transcription error: {e}")
-                raise RuntimeError(f"Ошибка транскрибации Gemini: {e}")
+                raise RuntimeError(f"Gemini transcription error: {e}")
 
         elif ai_service.openai_client:
             try:
@@ -41,9 +40,9 @@ class STTService:
                 return transcript.text.strip()
             except Exception as e:
                 logger.error(f"OpenAI Whisper error: {e}")
-                raise RuntimeError(f"Ошибка транскрибации Whisper: {e}")
+                raise RuntimeError(f"Whisper transcription error: {e}")
 
         else:
-            raise RuntimeError("Не настроен AI провайдер для распознавания речи (STT)!")
+            raise RuntimeError("No AI provider configured for speech recognition (STT)!")
 
 stt_service = STTService()

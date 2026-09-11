@@ -11,8 +11,8 @@ class DocParser:
     @staticmethod
     def extract_from_pdf(file_bytes: bytes) -> Tuple[str, int]:
         """
-        Извлекает текст из PDF документа.
-        Возвращает (текст, количество_страниц).
+        Extract text from PDF document.
+        Returns (text, page_count).
         """
         try:
             reader = PdfReader(io.BytesIO(file_bytes))
@@ -21,18 +21,18 @@ class DocParser:
             for i, page in enumerate(reader.pages):
                 page_text = page.extract_text() or ""
                 if page_text.strip():
-                    text_parts.append(f"--- Страница {i+1} ---\n{page_text}")
+                    text_parts.append(f"--- Page {i+1} ---\n{page_text}")
             
             full_text = "\n\n".join(text_parts).strip()
             return full_text, num_pages
         except Exception as e:
-            logger.error(f"Ошибка парсинга PDF: {e}")
-            raise RuntimeError(f"Не удалось прочитать PDF: {e}")
+            logger.error(f"Error parsing PDF: {e}")
+            raise RuntimeError(f"Failed to read PDF: {e}")
 
     @staticmethod
     def extract_images_from_pdf(file_bytes: bytes) -> List[bytes]:
         """
-        Извлекает встроенные изображения со страниц PDF (для отсканированных документов без текстового слоя).
+        Extract embedded images from PDF pages (for scanned documents without text layer).
         """
         try:
             reader = PdfReader(io.BytesIO(file_bytes))
@@ -42,16 +42,16 @@ class DocParser:
                     for img in page.images:
                         images.append(img.data)
                 except Exception as img_err:
-                    logger.debug(f"Ошибка извлечения изображения со страницы: {img_err}")
+                    logger.debug(f"Error extracting image from page: {img_err}")
             return images
         except Exception as e:
-            logger.warning(f"Ошибка поиска изображений в PDF: {e}")
+            logger.warning(f"Error searching images in PDF: {e}")
             return []
 
     @staticmethod
     def extract_from_docx(file_bytes: bytes) -> str:
         """
-        Извлекает текст, заголовки и таблицы из Word (.docx) документа.
+        Extract text, headings, and tables from Word (.docx) document.
         """
         try:
             doc = Document(io.BytesIO(file_bytes))
@@ -60,9 +60,9 @@ class DocParser:
                 if p.text.strip():
                     paragraphs.append(p.text)
 
-            # Извлечение данных из таблиц
+            # Extract data from tables
             for t_idx, table in enumerate(doc.tables):
-                table_lines = [f"\n[Таблица {t_idx+1}]"]
+                table_lines = [f"\n[Table {t_idx+1}]"]
                 for row in table.rows:
                     row_cells = [cell.text.strip() for cell in row.cells]
                     table_lines.append(" | ".join(row_cells))
@@ -70,17 +70,17 @@ class DocParser:
 
             return "\n\n".join(paragraphs).strip()
         except Exception as e:
-            logger.error(f"Ошибка парсинга DOCX: {e}")
-            raise RuntimeError(f"Не удалось прочитать DOCX: {e}")
+            logger.error(f"Error parsing DOCX: {e}")
+            raise RuntimeError(f"Failed to read DOCX: {e}")
 
     @staticmethod
     def validate_image(file_bytes: bytes) -> Tuple[bool, Optional[str], Optional[Tuple[int, int]]]:
         """
-        Проверяет корректность изображения, возвращает (is_valid, format, dimensions).
+        Validate image, returning (is_valid, format, dimensions).
         """
         try:
             with Image.open(io.BytesIO(file_bytes)) as img:
                 return True, img.format, img.size
         except Exception as e:
-            logger.warning(f"Ошибка валидации изображения: {e}")
+            logger.warning(f"Error validating image: {e}")
             return False, None, None

@@ -3,7 +3,7 @@ from bot.texts import get_text
 
 def get_main_menu_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
     """
-    Создает главное меню команд бота в виде постоянных кнопок на выбранном языке.
+    Creates main menu keyboard with persistent buttons in the selected language.
     """
     keyboard = [
         [
