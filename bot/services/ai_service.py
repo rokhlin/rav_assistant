@@ -83,6 +83,70 @@ class AIService:
 
         return await self._generate_vision(prompt, image_bytes, mime_type)
 
+    async def analyze_document_multimodal(
+        self,
+        file_bytes: bytes,
+        mime_type: str = "application/pdf",
+        text_content: Optional[str] = None,
+        custom_instruction: Optional[str] = None
+    ) -> str:
+        prompt = (
+            "Вы — персональный ассистент по анализу документов. "
+            "Внимательно изучите представленный документ (включая весь текст, таблицы, печати, рукописные пометки и отсканированные страницы) "
+            "и предоставьте структурированный разбор на русском языке:\n\n"
+            "📋 **Тип документа**: (определите, что это: квитанция, счет, договор, штраф, уведомление от банка/госорганов, справка и т.д.)\n"
+            "🎯 **Краткая суть**: (основное содержание, отправитель/стороны, даты, ключевые условия, реквизиты, суммы к оплате)\n"
+            "⚠️ **Что требуется от пользователя**: (четкие практические шаги: оплатить до определенного срока, подписать, отправить ответные документы, явиться, либо просто сохранить для архива)\n"
+            "🌐 **Перевод ключевых положений**: (переведите на русский язык самое главное содержание или весь документ, если он короткий)\n\n"
+        )
+        if custom_instruction:
+            prompt += f"Дополнительная инструкция пользователя: {custom_instruction}\n\n"
+
+        # Если провайдер Gemini - передаем PDF напрямую (поддерживает сканы, таблицы и изображения)
+        if (self.provider == "gemini" or self.gemini_client) and mime_type == "application/pdf":
+            return await self._generate_vision(prompt, file_bytes, mime_type)
+
+        # Если есть извлеченный текст - анализируем текст
+        if text_content and text_content.strip():
+            return await self._generate_text(prompt + f"\nТекст документа:\n{text_content}")
+
+        # Если OpenAI и это PDF без текста (скан) - извлекаем изображения страниц
+        if mime_type == "application/pdf":
+            from bot.services.doc_parser import DocParser
+            images = DocParser.extract_images_from_pdf(file_bytes)
+            if images:
+                return await self._generate_vision(prompt, images[0], "image/jpeg")
+
+        raise RuntimeError("Не удалось прочитать содержимое документа (текстовый слой и изображения отсутствуют).")
+
+    async def translate_document_multimodal(
+        self,
+        file_bytes: bytes,
+        mime_type: str = "application/pdf",
+        text_content: Optional[str] = None,
+        target_lang: str = "Русский"
+    ) -> str:
+        prompt = (
+            f"Вы — профессиональный переводчик документов. Переведите следующий документ на {target_lang}. "
+            "Внимательно распознайте весь текст (включая текст на сканах, печатях, таблицах). "
+            "Сохраняйте исходную структуру, разделы, таблицы и числовые значения. "
+            "Выводите только готовый перевод без лишних префиксов."
+        )
+
+        if (self.provider == "gemini" or self.gemini_client) and mime_type == "application/pdf":
+            return await self._generate_vision(prompt, file_bytes, mime_type)
+
+        if text_content and text_content.strip():
+            return await self._generate_text(prompt + f"\n\nТекст документа:\n{text_content}")
+
+        if mime_type == "application/pdf":
+            from bot.services.doc_parser import DocParser
+            images = DocParser.extract_images_from_pdf(file_bytes)
+            if images:
+                return await self._generate_vision(prompt, images[0], "image/jpeg")
+
+        raise RuntimeError("Не удалось извлечь текст для перевода из документа.")
+
     async def structure_note(self, raw_text: str) -> Dict[str, Any]:
         """
         Преобразует сырой текст или транскрипцию голоса в структурированную заметку.

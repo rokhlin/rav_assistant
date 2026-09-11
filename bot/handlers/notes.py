@@ -8,6 +8,8 @@ from bot.services.stt_service import stt_service
 from bot.services.ai_service import ai_service
 from bot.services.storage_service import storage_service
 
+from bot.utils.telegram_helpers import safe_edit_text
+
 logger = logging.getLogger(__name__)
 router = Router(name="notes_router")
 
@@ -30,7 +32,7 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext):
         # Транскрибация
         raw_text = await stt_service.transcribe(audio_bytes, mime_type="audio/ogg")
         if not raw_text:
-            await status_msg.edit_text("❌ Не удалось распознать речь в сообщении.")
+            await safe_edit_text(status_msg, "❌ Не удалось распознать речь в сообщении.")
             return
 
         # AI форматирование заметки
@@ -54,12 +56,12 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext):
             f"{structured['content']}\n\n"
             f"_(Исходная запись сохранена в Markdown)_"
         )
-        await status_msg.edit_text(response_text, parse_mode="Markdown")
+        await safe_edit_text(status_msg, response_text, parse_mode="Markdown")
         await state.clear()
 
     except Exception as e:
         logger.error(f"Ошибка обработки аудио/заметки: {e}", exc_info=True)
-        await status_msg.edit_text(f"❌ Ошибка при создании заметки: {e}")
+        await safe_edit_text(status_msg, f"❌ Ошибка при создании заметки: {e}")
 
 @router.message(BotStates.waiting_for_note, F.text)
 async def handle_text_note_in_state(message: Message, state: FSMContext):
@@ -87,9 +89,9 @@ async def handle_text_note_in_state(message: Message, state: FSMContext):
             f"### {saved_info['title']}\n\n"
             f"{structured['content']}"
         )
-        await status_msg.edit_text(response_text, parse_mode="Markdown")
+        await safe_edit_text(status_msg, response_text, parse_mode="Markdown")
         await state.clear()
 
     except Exception as e:
         logger.error(f"Ошибка создания текстовой заметки: {e}", exc_info=True)
-        await status_msg.edit_text(f"❌ Ошибка при создании заметки: {e}")
+        await safe_edit_text(status_msg, f"❌ Ошибка при создании заметки: {e}")

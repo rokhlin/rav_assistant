@@ -121,5 +121,49 @@ async def test_web_server_endpoints():
     assert resp_health.status == 200
     assert resp_health.content_type == "application/json"
 
+def test_telegram_helpers_split_text():
+    from bot.utils.telegram_helpers import split_text
+    # Small text
+    assert split_text("Hello") == ["Hello"]
+
+    # Long text with paragraphs
+    paragraphs = ["Paragraph " + str(i) * 100 for i in range(50)]
+    long_text = "\n\n".join(paragraphs)
+    chunks = split_text(long_text, max_chunk_size=500)
+    assert len(chunks) > 1
+    for c in chunks:
+        assert len(c) <= 500
+
+@pytest.mark.asyncio
+async def test_safe_edit_text_fallback():
+    from unittest.mock import AsyncMock
+    from aiogram.exceptions import TelegramBadRequest
+    from bot.utils.telegram_helpers import safe_edit_text
+
+    mock_msg = AsyncMock()
+    # First call with Markdown raises "can't parse entities"
+    # Second call with parse_mode=None succeeds
+    mock_msg.edit_text.side_effect = [
+        TelegramBadRequest(method=AsyncMock(), message="Bad Request: can't parse entities: unclosed entity"),
+        AsyncMock(text="plain text response")
+    ]
+
+    res = await safe_edit_text(mock_msg, "Some text with _unclosed entity", parse_mode="Markdown")
+    assert mock_msg.edit_text.call_count == 2
+    # Verify second call had parse_mode=None
+    assert mock_msg.edit_text.call_args_list[1].kwargs["parse_mode"] is None
+
+def test_pdf_extract_images():
+    from bot.services.doc_parser import DocParser
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    bio = io.BytesIO()
+    writer.write(bio)
+    file_bytes = bio.getvalue()
+
+    images = DocParser.extract_images_from_pdf(file_bytes)
+    assert isinstance(images, list)
+
+
 
 

@@ -9,6 +9,8 @@ from bot.services.ai_service import ai_service
 from bot.services.storage_service import storage_service
 from bot.keyboards.inline import get_media_actions_keyboard
 
+from bot.utils.telegram_helpers import send_chunked_response, safe_edit_text, safe_answer
+
 logger = logging.getLogger(__name__)
 router = Router(name="media_router")
 
@@ -24,7 +26,7 @@ async def _process_and_reply(
     original_filename: str = "document"
 ):
     """
-    Универсальная обработка контента (изображение/текст/документ)
+    Универсальная обработка контента (изображение/текст/документ/PDF)
     в зависимости от выбранного действия (analyze или translate).
     """
     status_msg = await message.answer(
@@ -46,7 +48,21 @@ async def _process_and_reply(
                     image_bytes=image_bytes,
                     mime_type=mime_type
                 )
-        elif content_type in ["text", "pdf", "docx"] and text_content:
+        elif content_type == "pdf" and (raw_file_bytes or text_content):
+            if action == "analyze":
+                result = await ai_service.analyze_document_multimodal(
+                    file_bytes=raw_file_bytes or b"",
+                    mime_type="application/pdf",
+                    text_content=text_content,
+                    custom_instruction=custom_instruction
+                )
+            else:
+                result = await ai_service.translate_document_multimodal(
+                    file_bytes=raw_file_bytes or b"",
+                    mime_type="application/pdf",
+                    text_content=text_content
+                )
+        elif content_type in ["text", "docx"] and text_content:
             if action == "analyze":
                 result = await ai_service.analyze_document_text(
                     text=text_content,
@@ -55,25 +71,21 @@ async def _process_and_reply(
             else:
                 result = await ai_service.translate_text(text=text_content)
         else:
-            await status_msg.edit_text("❌ Не удалось извлечь содержимое для обработки.")
+            await safe_edit_text(status_msg, "❌ Не удалось извлечь содержимое для обработки.")
             return
 
         # Инлайн-кнопки под ответом
         reply_kb = get_media_actions_keyboard(file_type=content_type, current_action=action)
-        
-        # Если текст очень длинный (> 4096 символов для Telegram), разбиваем
-        if len(result) <= 4000:
-            await status_msg.edit_text(result, reply_markup=reply_kb, parse_mode="Markdown")
-        else:
-            chunks = [result[i:i+3800] for i in range(0, len(result), 3800)]
-            await status_msg.edit_text(chunks[0], parse_mode="Markdown")
-            for chunk in chunks[1:-1]:
-                await message.answer(chunk, parse_mode="Markdown")
-            await message.answer(chunks[-1], reply_markup=reply_kb, parse_mode="Markdown")
+        await send_chunked_response(
+            message=message,
+            status_msg=status_msg,
+            full_text=result,
+            reply_markup=reply_kb
+        )
 
     except Exception as e:
         logger.error(f"Ошибка при обработке контента: {e}", exc_info=True)
-        await status_msg.edit_text(f"❌ Произошла ошибка при обработке: {e}")
+        await safe_edit_text(status_msg, f"❌ Произошла ошибка при обработке: {e}")
 
 @router.message(F.photo)
 async def handle_photo(message: Message, bot: Bot, state: FSMContext):
@@ -166,13 +178,12 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext):
         content_type = "pdf"
         try:
             text_extracted, pages = DocParser.extract_from_pdf(file_bytes)
-            if not text_extracted.strip():
-                # Если PDF без текста (скан), уведомляем
-                await message.answer("⚠️ Текстовый слой в PDF не найден (возможно, отсканированный документ). Попробуйте отправить страницу как фото.")
-                return
+            if not text_extracted or not text_extracted.strip():
+                logger.info("PDF не содержит встроенного текстового слоя (скан), отправляем на мультимодальный анализ")
+                text_extracted = None
         except Exception as e:
-            await message.answer(f"❌ Ошибка чтения PDF: {e}")
-            return
+            logger.warning(f"Ошибка чтения текстового слоя PDF ({e}), передаем файл напрямую модели")
+            text_extracted = None
 
     elif ext in ["docx", "doc"] or "word" in mime or "officedocument" in mime:
         content_type = "docx"

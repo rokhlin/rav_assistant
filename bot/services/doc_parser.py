@@ -1,6 +1,6 @@
 import io
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from pypdf import PdfReader
 from docx import Document
 from PIL import Image
@@ -28,6 +28,25 @@ class DocParser:
         except Exception as e:
             logger.error(f"Ошибка парсинга PDF: {e}")
             raise RuntimeError(f"Не удалось прочитать PDF: {e}")
+
+    @staticmethod
+    def extract_images_from_pdf(file_bytes: bytes) -> List[bytes]:
+        """
+        Извлекает встроенные изображения со страниц PDF (для отсканированных документов без текстового слоя).
+        """
+        try:
+            reader = PdfReader(io.BytesIO(file_bytes))
+            images = []
+            for page in reader.pages:
+                try:
+                    for img in page.images:
+                        images.append(img.data)
+                except Exception as img_err:
+                    logger.debug(f"Ошибка извлечения изображения со страницы: {img_err}")
+            return images
+        except Exception as e:
+            logger.warning(f"Ошибка поиска изображений в PDF: {e}")
+            return []
 
     @staticmethod
     def extract_from_docx(file_bytes: bytes) -> str:
