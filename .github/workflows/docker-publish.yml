@@ -42,7 +42,9 @@ jobs:
           pip install pytest pytest-asyncio
 
       - name: Run Test Suite
-        run: pytest -v
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -v
 
   build-and-publish:
     name: Build & Publish Telegram Helper Bot
