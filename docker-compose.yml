@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  telegram-helper-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: helper_translater_bot
+    restart: unless-stopped
+    env_file:
+      - data/config/.env
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - STORAGE_CLOUD_PATH=/app/data/cloud
+      - STORAGE_NOTES_PATH=/app/data/notes
+    volumes:
+      # Папка конфигурации и .env
+      - ${HOST_CONFIG_PATH:-./data/config}:/app/data/config
+      # Папка для сохранения файлов из Telegram (можно указать любой путь на ZimaBoard)
+      - ${HOST_CLOUD_PATH:-./data/cloud}:/app/data/cloud
+      # Папка для Markdown заметок (можно подключить к хранилищу Obsidian / Nextcloud)
+      - ${HOST_NOTES_PATH:-./data/notes}:/app/data/notes
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
