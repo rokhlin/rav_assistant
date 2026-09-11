@@ -44,6 +44,8 @@ jobs:
       - name: Run Test Suite
         env:
           PYTHONPATH: .
+          STORAGE_CLOUD_PATH: ./data/cloud
+          STORAGE_NOTES_PATH: ./data/notes
         run: python -m pytest -v
 
   build-and-publish:

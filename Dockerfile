@@ -18,6 +18,8 @@ COPY . .
 # Создание каталогов для данных и конфигурации
 RUN mkdir -p /app/data/config /app/data/cloud /app/data/notes
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    STORAGE_CLOUD_PATH=/app/data/cloud \
+    STORAGE_NOTES_PATH=/app/data/notes
 
 CMD ["python", "main.py"]

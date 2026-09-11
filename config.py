@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     OPENAI_WHISPER_MODEL: str = "whisper-1"
 
     # Storage
-    STORAGE_CLOUD_PATH: str = "/app/data/cloud"
-    STORAGE_NOTES_PATH: str = "/app/data/notes"
+    STORAGE_CLOUD_PATH: str = "data/cloud"
+    STORAGE_NOTES_PATH: str = "data/notes"
 
     # Defaults
     DEFAULT_ACTION: str = "analyze"  # "analyze" (Анализ и перевод) or "translate"
@@ -48,13 +48,19 @@ class Settings(BaseSettings):
     @property
     def cloud_path(self) -> Path:
         p = Path(self.STORAGE_CLOUD_PATH)
-        p.mkdir(parents=True, exist_ok=True)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         return p
 
     @property
     def notes_path(self) -> Path:
         p = Path(self.STORAGE_NOTES_PATH)
-        p.mkdir(parents=True, exist_ok=True)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         return p
 
 settings = Settings()

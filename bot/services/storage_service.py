@@ -11,9 +11,9 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 class StorageService:
-    def __init__(self):
-        self.cloud_dir = settings.cloud_path
-        self.notes_dir = settings.notes_path
+    def __init__(self, cloud_dir: Optional[Path] = None, notes_dir: Optional[Path] = None):
+        self.cloud_dir = Path(cloud_dir) if cloud_dir is not None else settings.cloud_path
+        self.notes_dir = Path(notes_dir) if notes_dir is not None else settings.notes_path
 
     @staticmethod
     def _sanitize_filename(name: str) -> str:

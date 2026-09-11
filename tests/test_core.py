@@ -13,11 +13,11 @@ from bot.services.system_status import SystemStatusService
 @pytest.mark.asyncio
 async def test_storage_service(tmp_path):
     # Настраиваем временные пути
-    service = StorageService()
-    service.cloud_dir = tmp_path / "cloud"
-    service.notes_dir = tmp_path / "notes"
-    service.cloud_dir.mkdir(parents=True, exist_ok=True)
-    service.notes_dir.mkdir(parents=True, exist_ok=True)
+    cloud_dir = tmp_path / "cloud"
+    notes_dir = tmp_path / "notes"
+    cloud_dir.mkdir(parents=True, exist_ok=True)
+    notes_dir.mkdir(parents=True, exist_ok=True)
+    service = StorageService(cloud_dir=cloud_dir, notes_dir=notes_dir)
 
     # 1. Тест сохранения в облако
     dummy_data = b"Hello Cloud Storage!"
