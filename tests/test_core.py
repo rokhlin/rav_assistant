@@ -164,6 +164,157 @@ def test_pdf_extract_images():
     images = DocParser.extract_images_from_pdf(file_bytes)
     assert isinstance(images, list)
 
+def test_localization_texts_complete():
+    from bot.texts import TEXTS, SUPPORTED_LANGUAGES, get_text, get_target_language_name, ALL_MENU_BUTTONS
+    
+    assert set(SUPPORTED_LANGUAGES.keys()) == {"ru", "en", "he"}
+    
+    # Check that keys are consistent across languages
+    ru_keys = set(TEXTS["ru"].keys())
+    en_keys = set(TEXTS["en"].keys())
+    he_keys = set(TEXTS["he"].keys())
+
+    assert ru_keys == en_keys, f"Missing in EN: {ru_keys - en_keys}"
+    assert ru_keys == he_keys, f"Missing in HE: {ru_keys - he_keys}"
+
+    # Check get_text helper and fallback
+    assert get_text("btn_translate", "ru") == "🌐 Перевод"
+    assert get_text("btn_translate", "en") == "🌐 Translation"
+    assert get_text("btn_translate", "he") == "🌐 תרגום"
+    assert get_text("btn_translate", "unknown_lang") == "🌐 Перевод"
+
+    # Check formatting
+    assert "Alice" in get_text("welcome", "ru", name="Alice")
+    assert "Alice" in get_text("welcome", "en", name="Alice")
+    assert "Alice" in get_text("welcome", "he", name="Alice")
+
+    # Target language names
+    assert get_target_language_name("ru") == "Русский"
+    assert get_target_language_name("en") == "English"
+    assert get_target_language_name("he") == "עברית"
+
+    # Button sets
+    assert "🌐 Перевод" in ALL_MENU_BUTTONS
+    assert "🌐 Translation" in ALL_MENU_BUTTONS
+    assert "🌐 תרגום" in ALL_MENU_BUTTONS
+
+def test_user_settings_persistence(tmp_path):
+    from bot.services.user_settings import UserSettingsService
+
+    config_file = tmp_path / "user_settings.json"
+    service = UserSettingsService(config_file=config_file)
+
+    # Default is 'ru' without asking
+    assert service.get_language(12345) == "ru"
+    assert service.get_language(None) == "ru"
+
+    # Change to english
+    service.set_language(12345, "en")
+    assert service.get_language(12345) == "en"
+
+    # Change to hebrew
+    service.set_language(67890, "he")
+    assert service.get_language(67890) == "he"
+
+    # Reload from disk
+    service2 = UserSettingsService(config_file=config_file)
+    assert service2.get_language(12345) == "en"
+    assert service2.get_language(67890) == "he"
+    assert service2.get_language(99999) == "ru"
+
+    # Invalid language falls back to 'ru'
+    service.set_language(12345, "invalid_lang")
+    assert service.get_language(12345) == "ru"
+
+def test_localized_keyboards():
+    from bot.keyboards.reply import get_main_menu_keyboard
+    from bot.keyboards.inline import get_cancel_keyboard, get_media_actions_keyboard, get_language_keyboard
+
+    # Reply keyboard buttons
+    kb_ru = get_main_menu_keyboard("ru")
+    assert any("Анализ и перевод" in btn.text for row in kb_ru.keyboard for btn in row)
+    assert any("Язык" in btn.text for row in kb_ru.keyboard for btn in row)
+
+    kb_en = get_main_menu_keyboard("en")
+    assert any("Analyze & Translate" in btn.text for row in kb_en.keyboard for btn in row)
+    assert any("Language" in btn.text for row in kb_en.keyboard for btn in row)
+
+    kb_he = get_main_menu_keyboard("he")
+    assert any("ניתוח ותרגום" in btn.text for row in kb_he.keyboard for btn in row)
+    assert any("שפה" in btn.text for row in kb_he.keyboard for btn in row)
+
+    # Cancel keyboard
+    assert "Отмена" in get_cancel_keyboard("ru").inline_keyboard[0][0].text
+    assert "Cancel" in get_cancel_keyboard("en").inline_keyboard[0][0].text
+    assert "ביטול" in get_cancel_keyboard("he").inline_keyboard[0][0].text
+
+    # Language selection keyboard
+    lang_kb = get_language_keyboard("en")
+    buttons_flat = [b for row in lang_kb.inline_keyboard for b in row]
+    callbacks = [b.callback_data for b in buttons_flat]
+    assert "lang_set:ru" in callbacks
+    assert "lang_set:en" in callbacks
+    assert "lang_set:he" in callbacks
+    # English should have checkmark
+    en_btn = next(b for b in buttons_flat if b.callback_data == "lang_set:en")
+    assert "✓" in en_btn.text
+
+def test_system_status_multilingual():
+    from bot.services.system_status import SystemStatusService
+
+    msg_ru = SystemStatusService.format_status_message(lang="ru")
+    assert "Статус бота и системы" in msg_ru
+    assert "Русский" in msg_ru
+
+    msg_en = SystemStatusService.format_status_message(lang="en")
+    assert "Bot & System Status" in msg_en
+    assert "English" in msg_en
+
+    msg_he = SystemStatusService.format_status_message(lang="he")
+    assert "סטטוס בוט ומערכת" in msg_he
+    assert "עברית" in msg_he
+
+@pytest.mark.asyncio
+async def test_ai_service_prompts_multilingual(monkeypatch):
+    from bot.services.ai_service import AIService
+    
+    captured_prompts = []
+    async def fake_generate_text(prompt: str) -> str:
+        captured_prompts.append(prompt)
+        return '{"title": "Test Title", "tags": ["tag"], "content": "Content"}'
+
+    service = AIService()
+    monkeypatch.setattr(service, "_generate_text", fake_generate_text)
+
+    # 1. Translate in Russian (default)
+    await service.translate_text("Hello world", lang="ru")
+    assert "Русский" in captured_prompts[-1]
+    assert "Hello world" in captured_prompts[-1]
+
+    # 2. Translate in English
+    await service.translate_text("Привет мир", lang="en")
+    assert "English" in captured_prompts[-1]
+    assert "Привет мир" in captured_prompts[-1]
+
+    # 3. Translate in Hebrew
+    await service.translate_text("Hello world", lang="he")
+    assert "עברית" in captured_prompts[-1]
+    assert "Hello world" in captured_prompts[-1]
+
+    # 4. Document Analysis in Russian
+    await service.analyze_document_text("Счет на оплату", lang="ru")
+    assert "Тип документа" in captured_prompts[-1]
+
+    # 5. Document Analysis in English
+    await service.analyze_document_text("Invoice 123", lang="en")
+    assert "Document Type" in captured_prompts[-1]
+
+    # 6. Document Analysis in Hebrew
+    await service.analyze_document_text("חשבונית 123", lang="he")
+    assert "סוג המסמך" in captured_prompts[-1]
+
+
+
 
 
 

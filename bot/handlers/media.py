@@ -8,8 +8,8 @@ from bot.services.doc_parser import DocParser
 from bot.services.ai_service import ai_service
 from bot.services.storage_service import storage_service
 from bot.keyboards.inline import get_media_actions_keyboard
-
-from bot.utils.telegram_helpers import send_chunked_response, safe_edit_text, safe_answer
+from bot.texts import get_text, get_target_language_name, ALL_MENU_BUTTONS
+from bot.utils.telegram_helpers import send_chunked_response, safe_edit_text
 
 logger = logging.getLogger(__name__)
 router = Router(name="media_router")
@@ -23,16 +23,20 @@ async def _process_and_reply(
     image_bytes: bytes = None,
     mime_type: str = "image/jpeg",
     raw_file_bytes: bytes = None,
-    original_filename: str = "document"
+    original_filename: str = "document",
+    lang: str = "ru"
 ):
     """
     Универсальная обработка контента (изображение/текст/документ/PDF)
-    в зависимости от выбранного действия (analyze или translate).
+    в зависимости от выбранного действия (analyze или translate) и языка.
     """
-    status_msg = await message.answer(
-        "⏳ *Анализирую и перевожу документ...*" if action == "analyze" else "⏳ *Перевожу на русский язык...*",
-        parse_mode="Markdown"
+    target_lang_name = get_target_language_name(lang)
+    wait_text = (
+        get_text("status_analyzing_and_translating", lang)
+        if action == "analyze"
+        else get_text("status_translating", lang, target_lang=target_lang_name)
     )
+    status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     try:
         result = ""
@@ -41,12 +45,14 @@ async def _process_and_reply(
                 result = await ai_service.analyze_document_image(
                     image_bytes=image_bytes,
                     mime_type=mime_type,
-                    custom_instruction=custom_instruction
+                    custom_instruction=custom_instruction,
+                    lang=lang
                 )
             else:
                 result = await ai_service.translate_image(
                     image_bytes=image_bytes,
-                    mime_type=mime_type
+                    mime_type=mime_type,
+                    lang=lang
                 )
         elif content_type == "pdf" and (raw_file_bytes or text_content):
             if action == "analyze":
@@ -54,28 +60,31 @@ async def _process_and_reply(
                     file_bytes=raw_file_bytes or b"",
                     mime_type="application/pdf",
                     text_content=text_content,
-                    custom_instruction=custom_instruction
+                    custom_instruction=custom_instruction,
+                    lang=lang
                 )
             else:
                 result = await ai_service.translate_document_multimodal(
                     file_bytes=raw_file_bytes or b"",
                     mime_type="application/pdf",
-                    text_content=text_content
+                    text_content=text_content,
+                    lang=lang
                 )
         elif content_type in ["text", "docx"] and text_content:
             if action == "analyze":
                 result = await ai_service.analyze_document_text(
                     text=text_content,
-                    custom_instruction=custom_instruction
+                    custom_instruction=custom_instruction,
+                    lang=lang
                 )
             else:
-                result = await ai_service.translate_text(text=text_content)
+                result = await ai_service.translate_text(text=text_content, lang=lang)
         else:
-            await safe_edit_text(status_msg, "❌ Не удалось извлечь содержимое для обработки.")
+            await safe_edit_text(status_msg, get_text("err_cannot_extract", lang))
             return
 
-        # Инлайн-кнопки под ответом
-        reply_kb = get_media_actions_keyboard(file_type=content_type, current_action=action)
+        # Инлайн-кнопки под ответом на выбранном языке
+        reply_kb = get_media_actions_keyboard(file_type=content_type, current_action=action, lang=lang)
         await send_chunked_response(
             message=message,
             status_msg=status_msg,
@@ -85,13 +94,13 @@ async def _process_and_reply(
 
     except Exception as e:
         logger.error(f"Ошибка при обработке контента: {e}", exc_info=True)
-        await safe_edit_text(status_msg, f"❌ Произошла ошибка при обработке: {e}")
+        await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
 
 @router.message(F.photo)
-async def handle_photo(message: Message, bot: Bot, state: FSMContext):
+async def handle_photo(message: Message, bot: Bot, state: FSMContext, lang: str = "ru"):
     """
     Обработка фотографий и изображений.
-    По умолчанию (если ничего не выбрано) выполняется 'Анализ и перевод'.
+    По умолчанию выполняется 'Анализ и перевод' на выбранный язык.
     """
     current_state = await state.get_state()
     custom_instruction = message.caption or None
@@ -116,15 +125,12 @@ async def handle_photo(message: Message, bot: Bot, state: FSMContext):
         # Режим сохранения
         saved = await storage_service.save_to_cloud(image_bytes, "photo.jpg")
         await message.answer(
-            f"✅ **Фотография сохранена в облако!**\n\n"
-            f"📁 Имя файла: `{saved['filename']}`\n"
-            f"📦 Размер: `{saved['size_kb']} KB`",
+            get_text("saved_photo_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb']),
             parse_mode="Markdown"
         )
         await state.clear()
         return
 
-    # Определение действия: если translate — переводим, иначе по умолчанию ANALYZE
     action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
     await _process_and_reply(
         message=message,
@@ -133,13 +139,14 @@ async def handle_photo(message: Message, bot: Bot, state: FSMContext):
         custom_instruction=custom_instruction,
         image_bytes=image_bytes,
         mime_type="image/jpeg",
-        original_filename="photo.jpg"
+        original_filename="photo.jpg",
+        lang=lang
     )
     if current_state:
         await state.clear()
 
 @router.message(F.document)
-async def handle_document(message: Message, bot: Bot, state: FSMContext):
+async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: str = "ru"):
     """
     Обработка документов (PDF, DOCX, изображения как файлы).
     По умолчанию выполняется 'Анализ и перевод'.
@@ -159,9 +166,7 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext):
     if current_state == BotStates.waiting_for_save:
         saved = await storage_service.save_to_cloud(file_bytes, filename)
         await message.answer(
-            f"✅ **Документ сохранен в облако!**\n\n"
-            f"📁 Имя файла: `{saved['filename']}`\n"
-            f"📦 Размер: `{saved['size_kb']} KB`",
+            get_text("saved_doc_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb']),
             parse_mode="Markdown"
         )
         await state.clear()
@@ -190,7 +195,7 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext):
         try:
             text_extracted = DocParser.extract_from_docx(file_bytes)
         except Exception as e:
-            await message.answer(f"❌ Ошибка чтения Word-документа: {e}")
+            await message.answer(get_text("err_word_read", lang, error=str(e)))
             return
 
     elif ext in ["jpg", "jpeg", "png", "webp"] or "image" in mime:
@@ -202,10 +207,10 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext):
             text_extracted = file_bytes.decode("utf-8")
             content_type = "text"
         except Exception:
-            # Если неизвестный бинарный файл — предлагаем сохранить в облако
+            # Если неизвестный бинарный файл — сохраняем в облако
             saved = await storage_service.save_to_cloud(file_bytes, filename)
             await message.answer(
-                f"📎 Файл формата `.{ext}` сохранен в хранилище:\n`{saved['filename']}`",
+                get_text("saved_unknown_file", lang, ext=ext, filename=saved['filename']),
                 parse_mode="Markdown"
             )
             return
@@ -228,13 +233,14 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext):
         image_bytes=image_bytes,
         mime_type=mime or "image/jpeg",
         raw_file_bytes=file_bytes,
-        original_filename=filename
+        original_filename=filename,
+        lang=lang
     )
     if current_state:
         await state.clear()
 
 @router.message(F.text, ~F.text.startswith("/"))
-async def handle_plain_text(message: Message, state: FSMContext):
+async def handle_plain_text(message: Message, state: FSMContext, lang: str = "ru"):
     """
     Обработка обычного текстового сообщения без команды.
     По умолчанию выполняется 'Анализ и перевод' (или 'Перевод' если активен режим перевода).
@@ -242,8 +248,8 @@ async def handle_plain_text(message: Message, state: FSMContext):
     current_state = await state.get_state()
     text = message.text.strip()
 
-    # Игнорируем нажатия на кнопки меню (они обрабатываются в commands.py)
-    if text in ["🔍 Анализ и перевод", "🌐 Перевод", "📝 Новая заметка", "💾 Сохранить в облако", "📊 Статус бота", "ℹ️ Справка"]:
+    # Игнорируем нажатия на кнопки меню на любом из поддерживаемых языков
+    if text in ALL_MENU_BUTTONS:
         return
 
     action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
@@ -258,7 +264,8 @@ async def handle_plain_text(message: Message, state: FSMContext):
         message=message,
         content_type="text",
         action=action,
-        text_content=text
+        text_content=text,
+        lang=lang
     )
     if current_state:
         await state.clear()

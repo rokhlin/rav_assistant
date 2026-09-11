@@ -1,103 +1,104 @@
+from typing import List
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, BotCommand
 from aiogram.fsm.context import FSMContext
 from bot.keyboards.reply import get_main_menu_keyboard
-from bot.keyboards.inline import get_cancel_keyboard
+from bot.keyboards.inline import get_cancel_keyboard, get_language_keyboard
 from bot.states import BotStates
 from bot.services.system_status import status_service
+from bot.texts import (
+    get_text,
+    BUTTON_HELP_ALL,
+    BUTTON_STATUS_ALL,
+    BUTTON_TRANSLATE_ALL,
+    BUTTON_ANALYZE_ALL,
+    BUTTON_SAVE_ALL,
+    BUTTON_NOTE_ALL,
+    BUTTON_LANG_ALL,
+)
 
 router = Router(name="commands_router")
 
-BOT_COMMANDS = [
-    BotCommand(command="analyze", description="🔍 Анализ и перевод документа (по умолчанию)"),
-    BotCommand(command="translate", description="🌐 Перевод текста / фото / документа"),
-    BotCommand(command="save", description="💾 Сохранить файл в облако"),
-    BotCommand(command="note", description="📝 Новая заметка (голос или текст -> .md)"),
-    BotCommand(command="status", description="📊 Статус бота и хранилища ZimaOS"),
-    BotCommand(command="help", description="ℹ️ Инструкция и справка"),
-]
+def get_bot_commands(lang: str = "ru") -> List[BotCommand]:
+    """Возвращает список команд бота с локализованными описаниями."""
+    return [
+        BotCommand(command="analyze", description=get_text("cmd_desc_analyze", lang)),
+        BotCommand(command="translate", description=get_text("cmd_desc_translate", lang)),
+        BotCommand(command="save", description=get_text("cmd_desc_save", lang)),
+        BotCommand(command="note", description=get_text("cmd_desc_note", lang)),
+        BotCommand(command="language", description=get_text("cmd_desc_language", lang)),
+        BotCommand(command="status", description=get_text("cmd_desc_status", lang)),
+        BotCommand(command="help", description=get_text("cmd_desc_help", lang)),
+    ]
+
+BOT_COMMANDS = get_bot_commands("ru")
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, lang: str = "ru"):
     await state.clear()
-    welcome_text = (
-        f"👋 Здравствуйте, {message.from_user.first_name}!\n\n"
-        "Я ваш персональный ассистент-переводчик и секретарь для **ZimaOS**.\n\n"
-        "✨ **Что я умею**:\n"
-        "• 📄 **Анализ и перевод** (по умолчанию): отправьте фото, PDF или Word-документ — я объясню, что это за документ, что требуется сделать, и переведу суть на русский язык.\n"
-        "• 🌐 **Перевод**: точный перевод документов, картинок или текста.\n"
-        "• 💾 **Сохранение в облако**: надежное сохранение файлов в вашу сетевую папку.\n"
-        "• 📝 **Новые заметки**: отправьте голосовое сообщение или текст — я структурирую мысль и сохраню красивый `.md` файл в ваше хранилище.\n\n"
-        "💡 *Подсказка: Вы можете просто отправить любой файл или фото, и я автоматически выполню анализ и перевод!*"
-    )
-    await message.answer(welcome_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+    first_name = message.from_user.first_name if message.from_user else "User"
+    welcome_text = get_text("welcome", lang, name=first_name)
+    await message.answer(welcome_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
 
 @router.message(Command("help"))
-@router.message(F.text == "ℹ️ Справка")
-async def cmd_help(message: Message):
-    help_text = (
-        "📖 **Руководство пользователя**\n\n"
-        "1️⃣ **Анализ и перевод документов** (Режим по умолчанию):\n"
-        "Просто отправьте боту фото, скан, PDF или Word-файл. Если нужно, добавьте подпись с вашим вопросом. Бот объяснит суть документа, выделит действия/сроки/суммы и даст перевод.\n\n"
-        "2️⃣ **Чистый перевод** (`/translate`):\n"
-        "Нажмите кнопку или команду, затем отправьте текст или файл для дословного перевода на русский язык.\n\n"
-        "3️⃣ **Сохранение в облако** (`/save`):\n"
-        "Отправьте файл в этом режиме или нажмите кнопку `💾 В облако` под любым сообщением — файл будет записан в вашу папку на ZimaBoard.\n\n"
-        "4️⃣ **Голосовые и текстовые заметки** (`/note`):\n"
-        "Запишите голосовое сообщение (аудио) или напишите мысль. Бот расшифрует голос, красиво отформатирует Markdown (с чекбоксами и тегами) и сохранит файл в папку заметок.\n\n"
-        "5️⃣ **Статус системы** (`/status`):\n"
-        "Показывает свободное место на дисках ZimaOS, количество сохраненных файлов и состояние AI-сервисов."
-    )
+@router.message(F.text.in_(BUTTON_HELP_ALL))
+async def cmd_help(message: Message, lang: str = "ru"):
+    help_text = get_text("help", lang)
     await message.answer(help_text, parse_mode="Markdown")
 
 @router.message(Command("status"))
-@router.message(F.text == "📊 Статус бота")
-async def cmd_status(message: Message):
-    status_text = status_service.format_status_message()
+@router.message(F.text.in_(BUTTON_STATUS_ALL))
+async def cmd_status(message: Message, lang: str = "ru"):
+    status_text = status_service.format_status_message(lang=lang)
     await message.answer(status_text, parse_mode="Markdown")
 
 @router.message(Command("translate"))
-@router.message(F.text == "🌐 Перевод")
-async def cmd_translate(message: Message, state: FSMContext):
+@router.message(F.text.in_(BUTTON_TRANSLATE_ALL))
+async def cmd_translate(message: Message, state: FSMContext, lang: str = "ru"):
     await state.set_state(BotStates.waiting_for_translate)
     await message.answer(
-        "🌐 **Режим перевода активен**\n\n"
-        "Отправьте текст, фото, PDF или Word-файл, который необходимо перевести на русский язык.",
-        reply_markup=get_cancel_keyboard(),
+        get_text("mode_translate", lang),
+        reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )
 
 @router.message(Command("analyze"))
-@router.message(F.text == "🔍 Анализ и перевод")
-async def cmd_analyze(message: Message, state: FSMContext):
+@router.message(F.text.in_(BUTTON_ANALYZE_ALL))
+async def cmd_analyze(message: Message, state: FSMContext, lang: str = "ru"):
     await state.set_state(BotStates.waiting_for_analyze)
     await message.answer(
-        "🔍 **Режим анализа и перевода активен**\n\n"
-        "Отправьте фото, PDF или Word-документ. Бот определит тип документа, выделит обязательства, сроки и ключевые моменты с переводом.",
-        reply_markup=get_cancel_keyboard(),
+        get_text("mode_analyze", lang),
+        reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )
 
 @router.message(Command("save"))
-@router.message(F.text == "💾 Сохранить в облако")
-async def cmd_save(message: Message, state: FSMContext):
+@router.message(F.text.in_(BUTTON_SAVE_ALL))
+async def cmd_save(message: Message, state: FSMContext, lang: str = "ru"):
     await state.set_state(BotStates.waiting_for_save)
     await message.answer(
-        "💾 **Режим сохранения в облако**\n\n"
-        "Отправьте любой файл (документ, фото, архив), и он будет сохранен в настроенную папку хранилища ZimaOS.",
-        reply_markup=get_cancel_keyboard(),
+        get_text("mode_save", lang),
+        reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )
 
 @router.message(Command("note"))
-@router.message(F.text == "📝 Новая заметка")
-async def cmd_note(message: Message, state: FSMContext):
+@router.message(F.text.in_(BUTTON_NOTE_ALL))
+async def cmd_note(message: Message, state: FSMContext, lang: str = "ru"):
     await state.set_state(BotStates.waiting_for_note)
     await message.answer(
-        "📝 **Создание новой заметки**\n\n"
-        "Отправьте **голосовое сообщение** 🎙 или **текст** ✍️.\n"
-        "Бот распознает речь, красиво отформатирует текст в Markdown и сохранит `.md` файл в вашу папку заметок.",
-        reply_markup=get_cancel_keyboard(),
+        get_text("mode_note", lang),
+        reply_markup=get_cancel_keyboard(lang),
+        parse_mode="Markdown"
+    )
+
+@router.message(Command("language"))
+@router.message(Command("lang"))
+@router.message(F.text.in_(BUTTON_LANG_ALL))
+async def cmd_language(message: Message, lang: str = "ru"):
+    await message.answer(
+        get_text("lang_select_prompt", lang),
+        reply_markup=get_language_keyboard(lang),
         parse_mode="Markdown"
     )

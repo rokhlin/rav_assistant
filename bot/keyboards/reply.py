@@ -1,21 +1,25 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from bot.texts import get_text
 
-def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
+def get_main_menu_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
     """
-    Создает главное меню команд бота в виде постоянных кнопок.
+    Создает главное меню команд бота в виде постоянных кнопок на выбранном языке.
     """
     keyboard = [
         [
-            KeyboardButton(text="🔍 Анализ и перевод"),
-            KeyboardButton(text="🌐 Перевод"),
+            KeyboardButton(text=get_text("btn_analyze", lang)),
+            KeyboardButton(text=get_text("btn_translate", lang)),
         ],
         [
-            KeyboardButton(text="📝 Новая заметка"),
-            KeyboardButton(text="💾 Сохранить в облако"),
+            KeyboardButton(text=get_text("btn_note", lang)),
+            KeyboardButton(text=get_text("btn_save", lang)),
         ],
         [
-            KeyboardButton(text="📊 Статус бота"),
-            KeyboardButton(text="ℹ️ Справка"),
+            KeyboardButton(text=get_text("btn_status", lang)),
+            KeyboardButton(text=get_text("btn_help", lang)),
+        ],
+        [
+            KeyboardButton(text=get_text("btn_language", lang)),
         ]
     ]
     return ReplyKeyboardMarkup(

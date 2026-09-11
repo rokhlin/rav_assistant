@@ -53,20 +53,24 @@ class StorageService:
         content: str,
         note_type: str = "text",
         tags: Optional[List[str]] = None,
-        raw_text: Optional[str] = None
+        raw_text: Optional[str] = None,
+        lang: str = "ru"
     ) -> Dict[str, Any]:
         """
         Создает и сохраняет заметку в формате Markdown (.md).
         """
+        from bot.texts import get_text
         now = datetime.now()
         timestamp_str = now.strftime("%Y-%m-%d %H:%M")
         file_prefix = now.strftime("%Y%m%d_%H%M%S")
         
-        safe_title = self._sanitize_filename(title or "Новая_заметка")
+        default_title = get_text("default_note_title", lang)
+        safe_title = self._sanitize_filename(title or default_title)
         filename = f"{file_prefix}_{safe_title}.md"
         destination = self.notes_dir / filename
 
-        tags_list = tags or ["заметка"]
+        default_tag = get_text("tag_note", lang)
+        tags_list = tags or [default_tag]
         tags_yaml = ", ".join([f'"{t}"' for t in tags_list])
 
         # Формирование содержимого Markdown
@@ -82,7 +86,8 @@ tags: [{tags_yaml}]
 {content.strip()}
 """
         if raw_text and raw_text.strip() != content.strip():
-            md_content += f"\n\n---\n### Исходный текст / расшифровка\n> {raw_text.strip()}\n"
+            header = get_text("orig_text_header", lang)
+            md_content += f"\n\n---\n### {header}\n> {raw_text.strip()}\n"
 
         async with aiofiles.open(destination, "w", encoding="utf-8") as f:
             await f.write(md_content)

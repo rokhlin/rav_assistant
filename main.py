@@ -30,9 +30,12 @@ async def main():
     )
     dp = Dispatcher()
 
-    # Middleware авторизации
+    # Middleware авторизации и языка
     dp.message.middleware(AuthMiddleware())
     dp.callback_query.middleware(AuthMiddleware())
+    from bot.middlewares.language import LanguageMiddleware
+    dp.message.middleware(LanguageMiddleware())
+    dp.callback_query.middleware(LanguageMiddleware())
 
     # Регистрация роутеров
     dp.include_router(commands_router)

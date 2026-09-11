@@ -3,6 +3,7 @@ import logging
 import asyncio
 from config import settings
 from bot.services.ai_service import ai_service
+from bot.texts import get_text
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +11,7 @@ class STTService:
     def __init__(self):
         self.provider = settings.AI_PROVIDER.lower()
 
-    async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
+    async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/ogg", lang: str = "ru") -> str:
         """
         Транскрибирует аудиозапись в текст.
         Поддерживает Google Gemini Audio и OpenAI Whisper.
@@ -18,10 +19,7 @@ class STTService:
         if self.provider == "gemini" and ai_service.gemini_client:
             from google.genai import types
             loop = asyncio.get_running_loop()
-            prompt = (
-                "Транскрибируйте это голосовое сообщение дословно. "
-                "Сохраняйте все смысловые акценты. Выведите только распознанный текст без комментариев."
-            )
+            prompt = get_text("ai_prompt_transcribe", lang)
             try:
                 response = await loop.run_in_executor(
                     None,

@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 from config import settings
+from bot.texts import get_text, get_target_language_name
 
 logger = logging.getLogger(__name__)
 
@@ -32,54 +33,36 @@ class AIService:
             except Exception as e:
                 logger.warning(f"Ошибка инициализации OpenAI client: {e}")
 
-    async def translate_text(self, text: str, target_lang: str = "Русский") -> str:
-        prompt = (
-            f"Вы — профессиональный переводчик. Переведите следующий текст на {target_lang}. "
-            "Сохраняйте исходное форматирование, структуру, списки и числовые значения. "
-            "Выводите только перевод без вводных фраз.\n\n"
-            f"Текст:\n{text}"
-        )
+    async def translate_text(self, text: str, target_lang: Optional[str] = None, lang: str = "ru") -> str:
+        if not target_lang:
+            target_lang = get_target_language_name(lang)
+        prompt = get_text("ai_prompt_translate_text", lang, target_lang=target_lang, text=text)
         return await self._generate_text(prompt)
 
-    async def analyze_document_text(self, text: str, custom_instruction: Optional[str] = None) -> str:
-        prompt = (
-            "Вы — персональный ассистент по анализу документов. "
-            "Внимательно изучите текст документа и предоставьте структурированный разбор на русском языке:\n\n"
-            "📋 **Тип документа**: (определите, что это: квитанция, счет, договор, штраф, уведомление от банка/госорганов и т.д.)\n"
-            "🎯 **Краткая суть**: (основное содержание, отправитель, даты, ключевые условия или суммы)\n"
-            "⚠️ **Что требуется от вас**: (четкие действия пользователя: оплатить до определенной даты, подписать, отправить ответ или просто ознакомиться)\n"
-            "🌐 **Перевод ключевых положений**: (переведите на русский язык самое главное содержание или весь текст, если он короткий)\n\n"
-        )
+    async def analyze_document_text(self, text: str, custom_instruction: Optional[str] = None, lang: str = "ru") -> str:
+        prompt = get_text("ai_prompt_analyze_text", lang)
         if custom_instruction:
-            prompt += f"Дополнительная инструкция пользователя: {custom_instruction}\n\n"
-        prompt += f"Текст документа:\n{text}"
+            prompt += get_text("ai_custom_instruction", lang, instruction=custom_instruction)
+        prompt += f"\n{text}"
 
         return await self._generate_text(prompt)
 
-    async def translate_image(self, image_bytes: bytes, mime_type: str = "image/jpeg", target_lang: str = "Русский") -> str:
-        prompt = (
-            f"Распознайте весь текст на этом изображении и переведите его на {target_lang}. "
-            "Сохраняйте исходное логическое форматирование и числовые значения. "
-            "Выдайте только готовый перевод без лишних префиксов."
-        )
+    async def translate_image(self, image_bytes: bytes, mime_type: str = "image/jpeg", target_lang: Optional[str] = None, lang: str = "ru") -> str:
+        if not target_lang:
+            target_lang = get_target_language_name(lang)
+        prompt = get_text("ai_prompt_translate_image", lang, target_lang=target_lang)
         return await self._generate_vision(prompt, image_bytes, mime_type)
 
     async def analyze_document_image(
         self,
         image_bytes: bytes,
         mime_type: str = "image/jpeg",
-        custom_instruction: Optional[str] = None
+        custom_instruction: Optional[str] = None,
+        lang: str = "ru"
     ) -> str:
-        prompt = (
-            "Вы — персональный ассистент по анализу документов и изображений. "
-            "Внимательно изучите документ на картинке и предоставьте структурированный ответ на русском языке:\n\n"
-            "📋 **Тип документа**: (квитанция, счет, контракт, официальное письмо, выписка и т.д.)\n"
-            "🎯 **Краткая суть**: (от кого, о чем, важные даты, суммы, реквизиты)\n"
-            "⚠️ **Что требуется от вас**: (конкретные действия: оплатить до срока, прислать документы, явиться, либо просто сохранить для архива)\n"
-            "🌐 **Перевод ключевых положений**: (перевод главного содержания документа на русский язык)\n\n"
-        )
+        prompt = get_text("ai_prompt_analyze_image", lang)
         if custom_instruction:
-            prompt += f"Дополнительное указание от пользователя: {custom_instruction}\n\n"
+            prompt += get_text("ai_custom_instruction", lang, instruction=custom_instruction)
 
         return await self._generate_vision(prompt, image_bytes, mime_type)
 
@@ -88,19 +71,12 @@ class AIService:
         file_bytes: bytes,
         mime_type: str = "application/pdf",
         text_content: Optional[str] = None,
-        custom_instruction: Optional[str] = None
+        custom_instruction: Optional[str] = None,
+        lang: str = "ru"
     ) -> str:
-        prompt = (
-            "Вы — персональный ассистент по анализу документов. "
-            "Внимательно изучите представленный документ (включая весь текст, таблицы, печати, рукописные пометки и отсканированные страницы) "
-            "и предоставьте структурированный разбор на русском языке:\n\n"
-            "📋 **Тип документа**: (определите, что это: квитанция, счет, договор, штраф, уведомление от банка/госорганов, справка и т.д.)\n"
-            "🎯 **Краткая суть**: (основное содержание, отправитель/стороны, даты, ключевые условия, реквизиты, суммы к оплате)\n"
-            "⚠️ **Что требуется от пользователя**: (четкие практические шаги: оплатить до определенного срока, подписать, отправить ответные документы, явиться, либо просто сохранить для архива)\n"
-            "🌐 **Перевод ключевых положений**: (переведите на русский язык самое главное содержание или весь документ, если он короткий)\n\n"
-        )
+        prompt = get_text("ai_prompt_analyze_multimodal", lang)
         if custom_instruction:
-            prompt += f"Дополнительная инструкция пользователя: {custom_instruction}\n\n"
+            prompt += get_text("ai_custom_instruction", lang, instruction=custom_instruction)
 
         # Если провайдер Gemini - передаем PDF напрямую (поддерживает сканы, таблицы и изображения)
         if (self.provider == "gemini" or self.gemini_client) and mime_type == "application/pdf":
@@ -108,7 +84,7 @@ class AIService:
 
         # Если есть извлеченный текст - анализируем текст
         if text_content and text_content.strip():
-            return await self._generate_text(prompt + f"\nТекст документа:\n{text_content}")
+            return await self._generate_text(prompt + f"\n{text_content}")
 
         # Если OpenAI и это PDF без текста (скан) - извлекаем изображения страниц
         if mime_type == "application/pdf":
@@ -117,27 +93,26 @@ class AIService:
             if images:
                 return await self._generate_vision(prompt, images[0], "image/jpeg")
 
-        raise RuntimeError("Не удалось прочитать содержимое документа (текстовый слой и изображения отсутствуют).")
+        err_msg = get_text("err_cannot_extract", lang)
+        raise RuntimeError(err_msg)
 
     async def translate_document_multimodal(
         self,
         file_bytes: bytes,
         mime_type: str = "application/pdf",
         text_content: Optional[str] = None,
-        target_lang: str = "Русский"
+        target_lang: Optional[str] = None,
+        lang: str = "ru"
     ) -> str:
-        prompt = (
-            f"Вы — профессиональный переводчик документов. Переведите следующий документ на {target_lang}. "
-            "Внимательно распознайте весь текст (включая текст на сканах, печатях, таблицах). "
-            "Сохраняйте исходную структуру, разделы, таблицы и числовые значения. "
-            "Выводите только готовый перевод без лишних префиксов."
-        )
+        if not target_lang:
+            target_lang = get_target_language_name(lang)
+        prompt = get_text("ai_prompt_translate_multimodal", lang, target_lang=target_lang)
 
         if (self.provider == "gemini" or self.gemini_client) and mime_type == "application/pdf":
             return await self._generate_vision(prompt, file_bytes, mime_type)
 
         if text_content and text_content.strip():
-            return await self._generate_text(prompt + f"\n\nТекст документа:\n{text_content}")
+            return await self._generate_text(prompt + f"\n\n{text_content}")
 
         if mime_type == "application/pdf":
             from bot.services.doc_parser import DocParser
@@ -145,26 +120,18 @@ class AIService:
             if images:
                 return await self._generate_vision(prompt, images[0], "image/jpeg")
 
-        raise RuntimeError("Не удалось извлечь текст для перевода из документа.")
+        err_msg = get_text("err_cannot_extract", lang)
+        raise RuntimeError(err_msg)
 
-    async def structure_note(self, raw_text: str) -> Dict[str, Any]:
+    async def structure_note(self, raw_text: str, lang: str = "ru") -> Dict[str, Any]:
         """
         Преобразует сырой текст или транскрипцию голоса в структурированную заметку.
         """
-        prompt = (
-            "Преобразуйте следующий текст/транскрипцию в аккуратную заметку. "
-            "Сформулируйте емкий заголовок (3-6 слов), подберите 1-3 релевантных тега (например: работа, покупки, идея, личное), "
-            "и структурируйте содержание с помощью Markdown (списки, пункты действий - [ ], важные мысли).\n"
-            "Верните ответ ИСКЛЮЧИТЕЛЬНО в формате JSON:\n"
-            "{\n"
-            '  "title": "Заголовок заметки",\n'
-            '  "tags": ["тег1", "тег2"],\n'
-            '  "content": "Структурированный Markdown текст заметки"\n'
-            "}\n\n"
-            f"Исходный текст:\n{raw_text}"
-        )
+        prompt = get_text("ai_prompt_structure_note", lang, raw_text=raw_text)
 
         response_text = await self._generate_text(prompt)
+        default_title = get_text("default_note_title", lang)
+        default_tag = get_text("tag_note", lang)
         try:
             # Очистка markdown разметки ```json ... ``` если вернулась
             cleaned = response_text.strip()
@@ -178,16 +145,16 @@ class AIService:
 
             data = json.loads(cleaned)
             return {
-                "title": data.get("title", "Новая заметка"),
-                "tags": data.get("tags", ["заметка"]),
+                "title": data.get("title", default_title),
+                "tags": data.get("tags", [default_tag]),
                 "content": data.get("content", raw_text)
             }
         except Exception as e:
             logger.warning(f"Не удалось распарсить JSON заметки ({e}), используем базовый шаблон")
             first_line = raw_text.strip().split("\n")[0][:40]
             return {
-                "title": first_line or "Новая заметка",
-                "tags": ["заметка"],
+                "title": first_line or default_title,
+                "tags": [default_tag],
                 "content": raw_text
             }
 
@@ -195,7 +162,6 @@ class AIService:
         if self.provider == "gemini" and self.gemini_client:
             import asyncio
             try:
-                # google-genai Client.models.generate_content is synchronous or can be run in executor
                 loop = asyncio.get_running_loop()
                 response = await loop.run_in_executor(
                     None,
