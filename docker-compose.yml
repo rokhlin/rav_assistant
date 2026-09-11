@@ -8,10 +8,8 @@ services:
     image: ghcr.io/rokhlin/helper_translater_bot:latest
     container_name: helper_translater_bot
     restart: unless-stopped
-    env_file:
-      - data/config/.env
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-UTC}
     volumes:
       # Папка конфигурации и .env
       - ./data/config:/app/data/config
