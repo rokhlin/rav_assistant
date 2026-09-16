@@ -74,3 +74,60 @@ def get_recipients_keyboard(note_token: str, current_user_id: int, lang: str = "
 
     buttons.append([InlineKeyboardButton(text=get_text("inline_cancel", lang), callback_data="act_cancel")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_request_access_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Keyboard with Request Access button for unauthorized users."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=get_text("btn_request_access", lang), callback_data="req_access")]
+        ]
+    )
+
+def get_admin_request_keyboard(applicant_id: int, applicant_name: str, lang: str = "ru") -> InlineKeyboardMarkup:
+    """Keyboard sent to admin with Approve and Reject buttons."""
+    approve_text = get_text("admin_btn_approve", lang, name=applicant_name[:20])
+    reject_text = get_text("admin_btn_reject", lang)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=approve_text, callback_data=f"adm_appr:{applicant_id}"),
+                InlineKeyboardButton(text=reject_text, callback_data=f"adm_rejc:{applicant_id}")
+            ]
+        ]
+    )
+
+def get_admin_main_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
+    """Main admin panel keyboard."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=get_text("admin_btn_users_list", lang), callback_data="adm_list")],
+            [InlineKeyboardButton(text=get_text("admin_btn_add_user", lang), callback_data="adm_add")],
+            [InlineKeyboardButton(text=get_text("admin_btn_close", lang), callback_data="adm_close")]
+        ]
+    )
+
+def get_admin_users_list_keyboard(users: dict, lang: str = "ru") -> InlineKeyboardMarkup:
+    """List of all users for admin to inspect."""
+    buttons = []
+    for uid_str, data in users.items():
+        name = data.get("name", f"User {uid_str}")
+        role_icon = "👑 " if data.get("role") == "admin" else "👤 "
+        btn_text = f"{role_icon}{name} ({uid_str})"
+        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"adm_view:{uid_str}")])
+    buttons.append([InlineKeyboardButton(text=get_text("admin_btn_add_user", lang), callback_data="adm_add")])
+    buttons.append([InlineKeyboardButton(text=get_text("admin_btn_close", lang), callback_data="adm_close")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_admin_user_card_keyboard(user_id: int, is_self: bool = False, lang: str = "ru") -> InlineKeyboardMarkup:
+    """Actions for a specific user card."""
+    row = [
+        InlineKeyboardButton(text=get_text("admin_btn_edit_name", lang), callback_data=f"adm_ren:{user_id}")
+    ]
+    if not is_self:
+        row.append(InlineKeyboardButton(text=get_text("admin_btn_delete_user", lang), callback_data=f"adm_del:{user_id}"))
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            row,
+            [InlineKeyboardButton(text=get_text("admin_btn_back_list", lang), callback_data="adm_list")]
+        ]
+    )

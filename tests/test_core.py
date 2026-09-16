@@ -476,6 +476,116 @@ def test_share_keyboards(monkeypatch):
     assert any("Мария" in t for t in button_texts)
     assert not any("Иван" in t for t in button_texts)  # Sender himself excluded
 
+def test_user_manager_crud_and_persistence(tmp_path):
+    from bot.services.user_manager import UserManagerService
+    users_file = tmp_path / "users.json"
+    mgr = UserManagerService(config_file=users_file)
+
+    # Initially empty
+    assert mgr.get_all_users() == {}
+
+    # Add admin user
+    mgr.add_user(user_id=101, name="AdminAlex", role="admin", username="alex")
+    assert mgr.is_allowed(101) is True
+    assert mgr.is_admin(101) is True
+    assert mgr.get_admin_ids() == [101]
+    assert mgr.get_user_name(101) == "AdminAlex"
+
+    # Add regular user
+    mgr.add_user(user_id=102, name="Maria", role="user")
+    assert mgr.is_allowed(102) is True
+    assert mgr.is_admin(102) is False
+    assert mgr.is_allowed(999) is False
+
+    # Check mapping
+    users_map = mgr.get_allowed_users_map()
+    assert users_map == {101: "AdminAlex", 102: "Maria"}
+
+    # Update name
+    mgr.update_user_name(102, "Maria New")
+    assert mgr.get_user_name(102) == "Maria New"
+
+    # Verify reload from disk
+    mgr_reloaded = UserManagerService(config_file=users_file)
+    assert mgr_reloaded.get_user_name(102) == "Maria New"
+    assert mgr_reloaded.is_admin(101) is True
+
+    # Remove user
+    mgr.remove_user(102)
+    assert mgr.is_allowed(102) is False
+    assert 102 not in mgr.get_allowed_user_ids()
+
+def test_admin_keyboards():
+    from bot.keyboards.inline import (
+        get_request_access_keyboard,
+        get_admin_request_keyboard,
+        get_admin_main_keyboard,
+        get_admin_users_list_keyboard,
+        get_admin_user_card_keyboard
+    )
+
+    req_kb = get_request_access_keyboard(lang="ru")
+    assert any(b.callback_data == "req_access" for row in req_kb.inline_keyboard for b in row)
+
+    adm_req_kb = get_admin_request_keyboard(12345, "Иван", lang="ru")
+    datas = [b.callback_data for row in adm_req_kb.inline_keyboard for b in row]
+    assert "adm_appr:12345" in datas
+    assert "adm_rejc:12345" in datas
+
+    main_kb = get_admin_main_keyboard(lang="ru")
+    main_datas = [b.callback_data for row in main_kb.inline_keyboard for b in row]
+    assert "adm_list" in main_datas
+    assert "adm_add" in main_datas
+
+    users_dict = {
+        "101": {"name": "Alex", "role": "admin"},
+        "102": {"name": "Maria", "role": "user"}
+    }
+    list_kb = get_admin_users_list_keyboard(users_dict, lang="ru")
+    list_datas = [b.callback_data for row in list_kb.inline_keyboard for b in row]
+    assert "adm_view:101" in list_datas
+    assert "adm_view:102" in list_datas
+
+    card_kb = get_admin_user_card_keyboard(102, is_self=False, lang="ru")
+    card_datas = [b.callback_data for row in card_kb.inline_keyboard for b in row]
+    assert "adm_ren:102" in card_datas
+    assert "adm_del:102" in card_datas
+
+@pytest.mark.asyncio
+async def test_auth_middleware(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from bot.middlewares.auth import AuthMiddleware
+    from bot.services.user_manager import UserManagerService
+
+    # Use isolated UserManager
+    test_mgr = UserManagerService(config_file=tmp_path / "test_users.json")
+    test_mgr.add_user(101, "AllowedUser", role="admin")
+    monkeypatch.setattr("bot.middlewares.auth.user_manager", test_mgr)
+
+    middleware = AuthMiddleware()
+    next_handler = AsyncMock(return_value="OK")
+
+    # 1. Allowed user message
+    event_allowed = MagicMock()
+    event_allowed.from_user.id = 101
+    res = await middleware(next_handler, event_allowed, {})
+    assert res == "OK"
+
+    # 2. Unauthorized user message
+    event_unauthorized = MagicMock()
+    event_unauthorized.from_user.id = 999
+    event_unauthorized.answer = AsyncMock()
+    res_block = await middleware(next_handler, event_unauthorized, {})
+    assert res_block is None
+    assert event_unauthorized.answer.called
+
+    # 3. Unauthorized user req_access callback query
+    event_callback = MagicMock()
+    event_callback.from_user.id = 999
+    event_callback.data = "req_access"
+    res_cb = await middleware(next_handler, event_callback, {})
+    assert res_cb == "OK"
+
 
 
 

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
+    ADMIN_USER_IDS: str = ""
     ALLOWED_USERS: str = ""
     ALLOWED_USER_IDS: str = ""
 
@@ -70,9 +71,17 @@ class Settings(BaseSettings):
     def allowed_users_map(self) -> Dict[int, str]:
         """
         Returns mapping of {user_id: user_name}.
-        Parses ALLOWED_USERS in format '12345:Alex, 67890:Maria'.
-        Falls back to ALLOWED_USER_IDS '12345, 67890'.
+        Queries dynamic user_manager for global settings, or falls back to ALLOWED_USERS / ALLOWED_USER_IDS.
         """
+        try:
+            if 'settings' in globals() and self is globals()['settings']:
+                from bot.services.user_manager import user_manager
+                dynamic_users = user_manager.get_allowed_users_map()
+                if dynamic_users:
+                    return dynamic_users
+        except Exception:
+            pass
+
         mapping: Dict[int, str] = {}
         raw = self.ALLOWED_USERS.strip()
         if raw:

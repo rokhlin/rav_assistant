@@ -6,6 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from config import settings
 from bot.handlers.commands import router as commands_router, BOT_COMMANDS
+from bot.handlers.admin import router as admin_router
 from bot.handlers.notes import router as notes_router
 from bot.handlers.media import router as media_router
 from bot.handlers.actions import router as actions_router
@@ -39,6 +40,7 @@ async def main():
 
     # Register routers
     dp.include_router(commands_router)
+    dp.include_router(admin_router)
     dp.include_router(actions_router)
     dp.include_router(notes_router)
     dp.include_router(media_router)
