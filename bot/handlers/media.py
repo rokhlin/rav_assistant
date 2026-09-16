@@ -18,6 +18,7 @@ async def _process_and_reply(
     message: Message,
     content_type: str,
     action: str,
+    status_msg: Message,
     custom_instruction: str = None,
     text_content: str = None,
     image_bytes: bytes = None,
@@ -30,15 +31,12 @@ async def _process_and_reply(
     Universal content processing (image/text/doc/pdf) based on action and language.
     """
     target_lang_name = get_target_language_name(lang)
-    wait_text = (
-        get_text("status_analyzing_and_translating", lang)
-        if action == "analyze"
-        else get_text("status_translating", lang, target_lang=target_lang_name)
-    )
-    status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     try:
         result = ""
+        
+        await safe_edit_text(status_msg, get_text("progress_sending_ai", lang))
+        
         if content_type == "image" and image_bytes:
             if action == "analyze":
                 result = await ai_service.analyze_document_image(
@@ -82,6 +80,8 @@ async def _process_and_reply(
             await safe_edit_text(status_msg, get_text("err_cannot_extract", lang))
             return
 
+        await safe_edit_text(status_msg, get_text("progress_processing", lang))
+        
         # Inline action buttons in selected language
         reply_kb = get_media_actions_keyboard(file_type=content_type, current_action=action, lang=lang)
         await send_chunked_response(
@@ -104,6 +104,11 @@ async def handle_photo(message: Message, bot: Bot, state: FSMContext, lang: str 
     """
     current_state = await state.get_state()
     custom_instruction = message.caption or None
+    action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
+    
+    target_lang_name = get_target_language_name(lang)
+    wait_text = get_text("status_analyzing_and_translating", lang) if action == "analyze" else get_text("status_translating", lang, target_lang=target_lang_name)
+    status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     photo = message.photo[-1]  # Highest resolution
     file_info = await bot.get_file(photo.file_id)
@@ -124,18 +129,18 @@ async def handle_photo(message: Message, bot: Bot, state: FSMContext, lang: str 
     if current_state == BotStates.waiting_for_save:
         # Direct save mode
         saved = await storage_service.save_to_cloud(image_bytes, "photo.jpg")
-        await message.answer(
-            get_text("saved_photo_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb']),
-            parse_mode="Markdown"
+        await safe_edit_text(
+            status_msg, 
+            get_text("saved_photo_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb'])
         )
         await state.clear()
         return
 
-    action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
     await _process_and_reply(
         message=message,
         content_type="image",
         action=action,
+        status_msg=status_msg,
         custom_instruction=custom_instruction,
         image_bytes=image_bytes,
         mime_type="image/jpeg",
@@ -156,6 +161,11 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
     filename = doc.file_name or "document"
     mime = doc.mime_type or ""
     custom_instruction = message.caption or None
+    action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
+    
+    target_lang_name = get_target_language_name(lang)
+    wait_text = get_text("status_analyzing_and_translating", lang) if action == "analyze" else get_text("status_translating", lang, target_lang=target_lang_name)
+    status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     file_info = await bot.get_file(doc.file_id)
     file_stream = io.BytesIO()
@@ -165,15 +175,14 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
     # Save to cloud if save mode is active
     if current_state == BotStates.waiting_for_save:
         saved = await storage_service.save_to_cloud(file_bytes, filename)
-        await message.answer(
-            get_text("saved_doc_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb']),
-            parse_mode="Markdown"
+        await safe_edit_text(
+            status_msg,
+            get_text("saved_doc_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb'])
         )
         await state.clear()
         return
 
     ext = filename.lower().split(".")[-1] if "." in filename else ""
-    action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
 
     text_extracted = None
     content_type = "doc"
@@ -182,6 +191,7 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
     if ext == "pdf" or "pdf" in mime:
         content_type = "pdf"
         try:
+            await safe_edit_text(status_msg, get_text("progress_analyzing_file", lang))
             text_extracted, pages = DocParser.extract_from_pdf(file_bytes)
             if not text_extracted or not text_extracted.strip():
                 logger.info("PDF has no embedded text layer (scan), routing to multimodal analysis")
@@ -193,9 +203,10 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
     elif ext in ["docx", "doc"] or "word" in mime or "officedocument" in mime:
         content_type = "docx"
         try:
+            await safe_edit_text(status_msg, get_text("progress_analyzing_file", lang))
             text_extracted = DocParser.extract_from_docx(file_bytes)
         except Exception as e:
-            await message.answer(get_text("err_word_read", lang, error=str(e)))
+            await safe_edit_text(status_msg, get_text("err_word_read", lang, error=str(e)))
             return
 
     elif ext in ["jpg", "jpeg", "png", "webp"] or "image" in mime:
@@ -209,9 +220,9 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
         except Exception:
             # If unknown binary file, save directly to cloud
             saved = await storage_service.save_to_cloud(file_bytes, filename)
-            await message.answer(
-                get_text("saved_unknown_file", lang, ext=ext, filename=saved['filename']),
-                parse_mode="Markdown"
+            await safe_edit_text(
+                status_msg,
+                get_text("saved_unknown_file", lang, ext=ext, filename=saved['filename'])
             )
             return
 
@@ -228,6 +239,7 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
         message=message,
         content_type=content_type,
         action=action,
+        status_msg=status_msg,
         custom_instruction=custom_instruction,
         text_content=text_extracted,
         image_bytes=image_bytes,
@@ -253,6 +265,9 @@ async def handle_plain_text(message: Message, state: FSMContext, lang: str = "ru
         return
 
     action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
+    target_lang_name = get_target_language_name(lang)
+    wait_text = get_text("status_analyzing_and_translating", lang) if action == "analyze" else get_text("status_translating", lang, target_lang=target_lang_name)
+    status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     await state.update_data(
         last_extracted_text=text,
@@ -264,8 +279,10 @@ async def handle_plain_text(message: Message, state: FSMContext, lang: str = "ru
         message=message,
         content_type="text",
         action=action,
+        status_msg=status_msg,
         text_content=text,
         lang=lang
     )
     if current_state:
         await state.clear()
+

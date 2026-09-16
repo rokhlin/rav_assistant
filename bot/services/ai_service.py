@@ -165,6 +165,7 @@ class AIService:
         request retries automatically with subsequent models from fallback chain.
         """
         import asyncio
+        import time
         loop = asyncio.get_running_loop()
         models = settings.gemini_models_chain
         last_error = None
@@ -177,7 +178,12 @@ class AIService:
                         contents=contents
                     )
 
+                logger.info(f"Starting Gemini API request. Model: '{model}'")
+                start_time = time.time()
                 response = await loop.run_in_executor(None, _invoke)
+                elapsed_time = time.time() - start_time
+                logger.info(f"Gemini API request succeeded. Model: '{model}', Elapsed time: {elapsed_time:.2f} seconds")
+                
                 if idx > 0:
                     logger.warning(
                         f"Primary model unavailable. Request succeeded with fallback model: '{model}'"
