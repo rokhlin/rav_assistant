@@ -48,3 +48,29 @@ def get_language_keyboard(current_lang: str = "ru") -> InlineKeyboardMarkup:
         btn_text = f"{flag} {name}{marker}"
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"lang_set:{code}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_note_share_keyboard(note_token: str, lang: str = "ru") -> InlineKeyboardMarkup:
+    """
+    Button to share note with another configured user.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=get_text("inline_share_note", lang), callback_data=f"share_start:{note_token}")]
+        ]
+    )
+
+def get_recipients_keyboard(note_token: str, current_user_id: int, lang: str = "ru") -> InlineKeyboardMarkup:
+    """
+    Displays list of users to share note with (excluding current sender).
+    """
+    from config import settings
+    buttons = []
+    
+    users_map = settings.allowed_users_map
+    for uid, name in users_map.items():
+        if uid != current_user_id:
+            btn_text = f"👤 {name}"
+            buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"share_send:{uid}:{note_token}")])
+
+    buttons.append([InlineKeyboardButton(text=get_text("inline_cancel", lang), callback_data="act_cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

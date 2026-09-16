@@ -53,10 +53,12 @@ async def main():
     # Ensure storage folders exist
     settings.cloud_path.mkdir(parents=True, exist_ok=True)
     settings.notes_path.mkdir(parents=True, exist_ok=True)
+    (settings.notes_path / "shared").mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Starting bot... AI Provider: {settings.AI_PROVIDER}")
     logger.info(f"Cloud folder: {settings.cloud_path}")
     logger.info(f"Notes folder: {settings.notes_path}")
+    logger.info(f"Shared notes folder: {settings.notes_path / 'shared'}")
 
     # Start lightweight web status server (for ZimaOS / CasaOS)
     web_runner = None

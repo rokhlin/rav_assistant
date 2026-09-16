@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
+    ALLOWED_USERS: str = ""
     ALLOWED_USER_IDS: str = ""
 
     # AI Provider: "gemini" or "openai"
@@ -66,15 +67,45 @@ class Settings(BaseSettings):
         return chain
 
     @property
+    def allowed_users_map(self) -> Dict[int, str]:
+        """
+        Returns mapping of {user_id: user_name}.
+        Parses ALLOWED_USERS in format '12345:Alex, 67890:Maria'.
+        Falls back to ALLOWED_USER_IDS '12345, 67890'.
+        """
+        mapping: Dict[int, str] = {}
+        raw = self.ALLOWED_USERS.strip()
+        if raw:
+            for part in raw.split(","):
+                part_clean = part.strip()
+                if not part_clean:
+                    continue
+                if ":" in part_clean:
+                    uid_str, name = part_clean.split(":", 1)
+                    uid_str, name = uid_str.strip(), name.strip()
+                    if uid_str.isdigit():
+                        mapping[int(uid_str)] = name or f"User {uid_str}"
+                elif part_clean.isdigit():
+                    mapping[int(part_clean)] = f"User {part_clean}"
+
+        # If ALLOWED_USERS didn't define any users or only partially, check ALLOWED_USER_IDS
+        if self.ALLOWED_USER_IDS.strip():
+            for uid in self.ALLOWED_USER_IDS.split(","):
+                uid_clean = uid.strip()
+                if uid_clean.isdigit():
+                    uid_int = int(uid_clean)
+                    if uid_int not in mapping:
+                        mapping[uid_int] = f"User {uid_int}"
+
+        return mapping
+
+    @property
     def allowed_users(self) -> List[int]:
-        if not self.ALLOWED_USER_IDS.strip():
-            return []
-        users = []
-        for uid in self.ALLOWED_USER_IDS.split(","):
-            uid_clean = uid.strip()
-            if uid_clean.isdigit():
-                users.append(int(uid_clean))
-        return users
+        return list(self.allowed_users_map.keys())
+
+    def get_user_name(self, user_id: int) -> str:
+        """Returns configured name for user or fallback."""
+        return self.allowed_users_map.get(user_id, f"User {user_id}")
 
     @property
     def cloud_path(self) -> Path:

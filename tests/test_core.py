@@ -386,6 +386,97 @@ async def test_gemini_fallback_all_fail(monkeypatch):
     # Check that all models in the chain were attempted
     assert mock_client.models.generate_content.call_count == len(settings.gemini_models_chain)
 
+def test_allowed_users_configuration(monkeypatch):
+    from config import Settings
+    # 1. Test ALLOWED_USERS with names
+    s1 = Settings(ALLOWED_USERS="1001:Иван, 1002:Мария", ALLOWED_USER_IDS="")
+    assert s1.allowed_users == [1001, 1002]
+    assert s1.allowed_users_map == {1001: "Иван", 1002: "Мария"}
+    assert s1.get_user_name(1001) == "Иван"
+    assert s1.get_user_name(1002) == "Мария"
+    assert s1.get_user_name(9999) == "User 9999"
+
+    # 2. Test fallback to ALLOWED_USER_IDS
+    s2 = Settings(ALLOWED_USERS="", ALLOWED_USER_IDS="2001, 2002")
+    assert s2.allowed_users == [2001, 2002]
+    assert s2.get_user_name(2001) == "User 2001"
+
+@pytest.mark.asyncio
+async def test_per_user_storage_and_sharing(tmp_path):
+    cloud_dir = tmp_path / "cloud"
+    notes_dir = tmp_path / "notes"
+    service = StorageService(cloud_dir=cloud_dir, notes_dir=notes_dir)
+
+    # 1. Test saving file into user-specific folder
+    file_data = b"User file content"
+    res_cloud = await service.save_to_cloud(file_data, "doc.pdf", user_id=12345)
+    cloud_file_path = Path(res_cloud["path"])
+    assert cloud_file_path.exists()
+    assert cloud_file_path.parent == cloud_dir / "12345"
+
+    # 2. Test saving note into user-specific folder
+    res_note = await service.save_note(
+        title="План на неделю",
+        content="Купить сервер",
+        note_type="text",
+        tags=["планы"],
+        user_id=12345
+    )
+    note_path = Path(res_note["path"])
+    assert note_path.exists()
+    assert note_path.parent == notes_dir / "12345"
+    content = note_path.read_text(encoding="utf-8")
+    assert 'author_id: "12345"' in content
+    token = res_note["token"]
+    assert token is not None
+
+    # Retrieve from token cache
+    cached = service.get_note_by_token(token)
+    assert cached["title"] == "План на неделю"
+
+    # 3. Test sharing note
+    share_result = await service.share_note(
+        token_or_path=token,
+        sender_id=12345,
+        recipient_id=67890,
+        sender_name="Алексей",
+        recipient_name="Мария"
+    )
+    shared_path = Path(share_result["path"])
+    assert shared_path.exists()
+    assert shared_path.parent == notes_dir / "shared"
+    assert "from_Алексей_" in shared_path.name
+
+    shared_text = shared_path.read_text(encoding="utf-8")
+    assert 'author: "Алексей"' in shared_text
+    assert 'shared_to: "Мария"' in shared_text
+    assert "Купить сервер" in shared_text
+
+    # 4. Verify get_stats counts files across subdirectories and shared folder
+    stats = service.get_stats()
+    assert stats["cloud_files_count"] == 1
+    assert stats["notes_count"] == 2  # 1 personal + 1 shared
+
+def test_share_keyboards(monkeypatch):
+    from config import settings
+    from bot.keyboards.inline import get_note_share_keyboard, get_recipients_keyboard
+
+    monkeypatch.setattr(settings, "ALLOWED_USERS", "111:Иван, 222:Мария")
+
+    # Share button
+    share_kb = get_note_share_keyboard("tok123", lang="ru")
+    assert any(btn.callback_data == "share_start:tok123" for row in share_kb.inline_keyboard for btn in row)
+
+    # Recipients keyboard for sender 111 (should only show 222: Мария)
+    recipients_kb = get_recipients_keyboard("tok123", current_user_id=111, lang="ru")
+    callback_datas = [btn.callback_data for row in recipients_kb.inline_keyboard for btn in row]
+    button_texts = [btn.text for row in recipients_kb.inline_keyboard for btn in row]
+
+    assert "share_send:222:tok123" in callback_datas
+    assert any("Мария" in t for t in button_texts)
+    assert not any("Иван" in t for t in button_texts)  # Sender himself excluded
+
+
 
 
 

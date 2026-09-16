@@ -128,7 +128,8 @@ async def handle_photo(message: Message, bot: Bot, state: FSMContext, lang: str 
 
     if current_state == BotStates.waiting_for_save:
         # Direct save mode
-        saved = await storage_service.save_to_cloud(image_bytes, "photo.jpg")
+        user_id = message.from_user.id if message.from_user else None
+        saved = await storage_service.save_to_cloud(image_bytes, "photo.jpg", user_id=user_id)
         await safe_edit_text(
             status_msg, 
             get_text("saved_photo_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb'])
@@ -173,8 +174,9 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
     file_bytes = file_stream.getvalue()
 
     # Save to cloud if save mode is active
+    user_id = message.from_user.id if message.from_user else None
     if current_state == BotStates.waiting_for_save:
-        saved = await storage_service.save_to_cloud(file_bytes, filename)
+        saved = await storage_service.save_to_cloud(file_bytes, filename, user_id=user_id)
         await safe_edit_text(
             status_msg,
             get_text("saved_doc_to_cloud", lang, filename=saved['filename'], size_kb=saved['size_kb'])
@@ -219,7 +221,7 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
             content_type = "text"
         except Exception:
             # If unknown binary file, save directly to cloud
-            saved = await storage_service.save_to_cloud(file_bytes, filename)
+            saved = await storage_service.save_to_cloud(file_bytes, filename, user_id=user_id)
             await safe_edit_text(
                 status_msg,
                 get_text("saved_unknown_file", lang, ext=ext, filename=saved['filename'])

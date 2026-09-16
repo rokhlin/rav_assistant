@@ -1,11 +1,17 @@
 import logging
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
+from config import settings
 from bot.services.ai_service import ai_service
 from bot.services.storage_service import storage_service
 from bot.services.user_settings import user_settings
-from bot.keyboards.inline import get_media_actions_keyboard, get_language_keyboard
+from bot.keyboards.inline import (
+    get_media_actions_keyboard,
+    get_language_keyboard,
+    get_note_share_keyboard,
+    get_recipients_keyboard,
+)
 from bot.keyboards.reply import get_main_menu_keyboard
 from bot.texts import get_text, get_target_language_name, SUPPORTED_LANGUAGES
 from bot.utils.telegram_helpers import send_chunked_response, safe_edit_text, safe_reply
@@ -163,8 +169,9 @@ async def callback_save_cloud(query: CallbackQuery, state: FSMContext, lang: str
         return
 
     try:
+        user_id = query.from_user.id if query.from_user else None
         file_bytes = bytes.fromhex(file_hex)
-        saved = await storage_service.save_to_cloud(file_bytes, filename)
+        saved = await storage_service.save_to_cloud(file_bytes, filename, user_id=user_id)
         await query.answer("OK")
         msg_text = get_text(
             "saved_to_cloud",
@@ -187,6 +194,7 @@ async def callback_save_note(query: CallbackQuery, state: FSMContext, lang: str 
 
     await query.answer(get_text("toast_forming_note", lang))
     try:
+        user_id = query.from_user.id if query.from_user else None
         structured = await ai_service.structure_note(message_text, lang=lang)
         tag_doc = get_text("tag_doc", lang)
         saved = await storage_service.save_note(
@@ -195,7 +203,8 @@ async def callback_save_note(query: CallbackQuery, state: FSMContext, lang: str 
             note_type="doc_summary",
             tags=structured.get("tags", [tag_doc]),
             raw_text=message_text,
-            lang=lang
+            lang=lang,
+            user_id=user_id
         )
 
         tags_str = " ".join([f"#{t}" for t in saved["tags"]])
@@ -206,7 +215,105 @@ async def callback_save_note(query: CallbackQuery, state: FSMContext, lang: str 
             tags=tags_str,
             title=saved["title"]
         )
-        await query.message.reply(msg_text, parse_mode="Markdown")
+
+        other_users = [uid for uid in settings.allowed_users if uid != user_id]
+        share_kb = get_note_share_keyboard(saved["token"], lang=lang) if other_users and saved.get("token") else None
+
+        await query.message.reply(msg_text, reply_markup=share_kb, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Error creating note from message: {e}")
+        await query.answer(f"Error: {e}", show_alert=True)
+
+@router.callback_query(F.data.startswith("share_start:"))
+async def callback_share_start(query: CallbackQuery, lang: str = "ru"):
+    token = query.data.split(":", 1)[1]
+    note_info = storage_service.get_note_by_token(token)
+    if not note_info:
+        await query.answer(get_text("err_note_not_found", lang), show_alert=True)
+        return
+
+    user_id = query.from_user.id
+    other_users = [uid for uid in settings.allowed_users if uid != user_id]
+    if not other_users:
+        await query.answer(get_text("err_no_recipients", lang), show_alert=True)
+        return
+
+    kb = get_recipients_keyboard(token, current_user_id=user_id, lang=lang)
+    await query.message.reply(
+        get_text("prompt_choose_recipient", lang),
+        reply_markup=kb,
+        parse_mode="Markdown"
+    )
+    await query.answer()
+
+@router.callback_query(F.data.startswith("share_send:"))
+async def callback_share_send(query: CallbackQuery, bot: Bot, lang: str = "ru"):
+    parts = query.data.split(":")
+    if len(parts) < 3:
+        await query.answer()
+        return
+
+    recipient_id_str = parts[1]
+    token = parts[2]
+
+    if not recipient_id_str.isdigit():
+        await query.answer()
+        return
+
+    recipient_id = int(recipient_id_str)
+    sender_id = query.from_user.id
+    sender_name = settings.get_user_name(sender_id)
+    if sender_name == f"User {sender_id}" and query.from_user.first_name:
+        sender_name = query.from_user.first_name
+
+    recipient_name = settings.get_user_name(recipient_id)
+
+    note_info = storage_service.get_note_by_token(token)
+    if not note_info:
+        await query.answer(get_text("err_note_not_found", lang), show_alert=True)
+        return
+
+    try:
+        # Save copy to data/notes/shared/
+        shared_result = await storage_service.share_note(
+            token_or_path=token,
+            sender_id=sender_id,
+            recipient_id=recipient_id,
+            sender_name=sender_name,
+            recipient_name=recipient_name,
+            lang=lang
+        )
+
+        # Get recipient's language preference
+        recipient_lang = user_settings.get_language(recipient_id)
+
+        # Format message for recipient
+        tags_str = " ".join([f"#{t}" for t in shared_result.get("tags", [])])
+        recipient_msg_text = get_text(
+            "shared_note_received",
+            recipient_lang,
+            sender_name=sender_name,
+            title=shared_result.get("title", ""),
+            content=shared_result.get("content", ""),
+            tags=tags_str
+        )
+
+        # Send note text to recipient in Telegram
+        await bot.send_message(
+            chat_id=recipient_id,
+            text=recipient_msg_text,
+            parse_mode="Markdown"
+        )
+
+        # Confirm to sender
+        success_text = get_text(
+            "shared_note_success",
+            lang,
+            recipient_name=recipient_name
+        )
+        await safe_edit_text(query.message, success_text, parse_mode="Markdown")
+        await query.answer(f"✓ {recipient_name}")
+
+    except Exception as e:
+        logger.error(f"Error sharing note to {recipient_id}: {e}", exc_info=True)
         await query.answer(f"Error: {e}", show_alert=True)

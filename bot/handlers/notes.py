@@ -3,6 +3,8 @@ import logging
 from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
+from config import settings
+from bot.keyboards.inline import get_note_share_keyboard
 from bot.states import BotStates
 from bot.services.stt_service import stt_service
 from bot.services.ai_service import ai_service
@@ -38,7 +40,8 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, la
         # AI note structuring in the selected language
         structured = await ai_service.structure_note(raw_text, lang=lang)
 
-        # Save to .md file
+        # Save to .md file in user's folder
+        user_id = message.from_user.id if message.from_user else None
         tag_voice = get_text("tag_voice", lang)
         saved_info = await storage_service.save_note(
             title=structured["title"],
@@ -46,7 +49,8 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, la
             note_type="voice",
             tags=structured.get("tags", [tag_voice]),
             raw_text=raw_text,
-            lang=lang
+            lang=lang,
+            user_id=user_id
         )
 
         tags_str = " ".join([f"#{t}" for t in saved_info["tags"]])
@@ -59,7 +63,12 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, la
             content=structured["content"],
             orig_saved=get_text("orig_recording_saved", lang)
         )
-        await safe_edit_text(status_msg, response_text, parse_mode="Markdown")
+
+        # Show share button if there are other configured users
+        other_users = [uid for uid in settings.allowed_users if uid != user_id]
+        share_kb = get_note_share_keyboard(saved_info["token"], lang=lang) if other_users and saved_info.get("token") else None
+
+        await safe_edit_text(status_msg, response_text, reply_markup=share_kb, parse_mode="Markdown")
         await state.clear()
 
     except Exception as e:
@@ -76,6 +85,7 @@ async def handle_text_note_in_state(message: Message, state: FSMContext, lang: s
         text = message.text.strip()
         structured = await ai_service.structure_note(text, lang=lang)
 
+        user_id = message.from_user.id if message.from_user else None
         tag_text = get_text("tag_text", lang)
         saved_info = await storage_service.save_note(
             title=structured["title"],
@@ -83,7 +93,8 @@ async def handle_text_note_in_state(message: Message, state: FSMContext, lang: s
             note_type="text",
             tags=structured.get("tags", [tag_text]),
             raw_text=text,
-            lang=lang
+            lang=lang,
+            user_id=user_id
         )
 
         tags_str = " ".join([f"#{t}" for t in saved_info["tags"]])
@@ -95,7 +106,11 @@ async def handle_text_note_in_state(message: Message, state: FSMContext, lang: s
             title=saved_info["title"],
             content=structured["content"]
         )
-        await safe_edit_text(status_msg, response_text, parse_mode="Markdown")
+
+        other_users = [uid for uid in settings.allowed_users if uid != user_id]
+        share_kb = get_note_share_keyboard(saved_info["token"], lang=lang) if other_users and saved_info.get("token") else None
+
+        await safe_edit_text(status_msg, response_text, reply_markup=share_kb, parse_mode="Markdown")
         await state.clear()
 
     except Exception as e:
