@@ -14,6 +14,8 @@ def get_media_actions_keyboard(file_type: str = "doc", current_action: Optional[
         row1.append(InlineKeyboardButton(text=get_text("inline_translate", lang), callback_data="act_translate"))
     if current_action != "analyze":
         row1.append(InlineKeyboardButton(text=get_text("inline_analyze", lang), callback_data="act_analyze"))
+    if current_action != "scan":
+        row1.append(InlineKeyboardButton(text=get_text("inline_scan", lang), callback_data="act_scan"))
     if row1:
         buttons.append(row1)
 

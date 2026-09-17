@@ -43,6 +43,7 @@ def get_target_language_name(lang: str = DEFAULT_LANGUAGE) -> str:
 # Button text sets across all languages for handler filtering
 BUTTON_ANALYZE_ALL: Set[str] = {TEXTS[l]["btn_analyze"] for l in TEXTS if "btn_analyze" in TEXTS[l]}
 BUTTON_TRANSLATE_ALL: Set[str] = {TEXTS[l]["btn_translate"] for l in TEXTS if "btn_translate" in TEXTS[l]}
+BUTTON_SCAN_ALL: Set[str] = {TEXTS[l]["btn_scan"] for l in TEXTS if "btn_scan" in TEXTS[l]}
 BUTTON_NOTE_ALL: Set[str] = {TEXTS[l]["btn_note"] for l in TEXTS if "btn_note" in TEXTS[l]}
 BUTTON_SAVE_ALL: Set[str] = {TEXTS[l]["btn_save"] for l in TEXTS if "btn_save" in TEXTS[l]}
 BUTTON_STATUS_ALL: Set[str] = {TEXTS[l]["btn_status"] for l in TEXTS if "btn_status" in TEXTS[l]}
@@ -52,6 +53,7 @@ BUTTON_LANG_ALL: Set[str] = {TEXTS[l]["btn_language"] for l in TEXTS if "btn_lan
 ALL_MENU_BUTTONS: Set[str] = (
     BUTTON_ANALYZE_ALL
     | BUTTON_TRANSLATE_ALL
+    | BUTTON_SCAN_ALL
     | BUTTON_NOTE_ALL
     | BUTTON_SAVE_ALL
     | BUTTON_STATUS_ALL

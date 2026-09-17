@@ -29,12 +29,14 @@ class SystemStatusService:
             provider_info = f"OpenAI ({settings.OPENAI_MODEL} + {settings.OPENAI_WHISPER_MODEL})"
             api_ready = bool(settings.OPENAI_API_KEY)
 
+        default_act = settings.DEFAULT_ACTION.lower() if settings.DEFAULT_ACTION else "analyze"
+
         return {
             "uptime": uptime_str,
             "system": f"{platform.system()} {platform.release()} ({platform.machine()})",
             "provider": provider_info,
             "api_ready": api_ready,
-            "default_action": "analyze" if settings.DEFAULT_ACTION == "analyze" else "translate",
+            "default_action": default_act if default_act in ["analyze", "translate", "scan"] else "analyze",
             "memory_mb": memory_mb,
             "cloud_path": storage_stats["cloud_path"],
             "cloud_files_count": storage_stats["cloud_files_count"],
@@ -54,7 +56,12 @@ class SystemStatusService:
         else:
             disk_str = get_text("status_unavailable", lang)
 
-        action_text = get_text("status_action_analyze", lang) if s["default_action"] == "analyze" else get_text("status_action_translate", lang)
+        if s["default_action"] == "analyze":
+            action_text = get_text("status_action_analyze", lang)
+        elif s["default_action"] == "scan":
+            action_text = get_text("status_action_scan", lang)
+        else:
+            action_text = get_text("status_action_translate", lang)
         current_lang_name = get_target_language_name(lang)
 
         msg = (

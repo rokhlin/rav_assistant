@@ -123,6 +123,46 @@ class AIService:
         err_msg = get_text("err_cannot_extract", lang)
         raise RuntimeError(err_msg)
 
+    async def scan_image(
+        self,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        custom_instruction: Optional[str] = None,
+        lang: str = "ru"
+    ) -> str:
+        prompt = get_text("ai_prompt_scan_image", lang)
+        if custom_instruction:
+            prompt += get_text("ai_custom_instruction", lang, instruction=custom_instruction)
+
+        return await self._generate_vision(prompt, image_bytes, mime_type)
+
+    async def scan_document_multimodal(
+        self,
+        file_bytes: bytes,
+        mime_type: str = "application/pdf",
+        text_content: Optional[str] = None,
+        custom_instruction: Optional[str] = None,
+        lang: str = "ru"
+    ) -> str:
+        if text_content and text_content.strip():
+            return text_content.strip()
+
+        prompt = get_text("ai_prompt_scan_multimodal", lang)
+        if custom_instruction:
+            prompt += get_text("ai_custom_instruction", lang, instruction=custom_instruction)
+
+        if (self.provider == "gemini" or self.gemini_client) and mime_type == "application/pdf":
+            return await self._generate_vision(prompt, file_bytes, mime_type)
+
+        if mime_type == "application/pdf":
+            from bot.services.doc_parser import DocParser
+            images = DocParser.extract_images_from_pdf(file_bytes)
+            if images:
+                return await self._generate_vision(prompt, images[0], "image/jpeg")
+
+        err_msg = get_text("err_cannot_extract", lang)
+        raise RuntimeError(err_msg)
+
     async def analyze_document_images_batch(
         self,
         images_bytes: List[bytes],
@@ -132,9 +172,9 @@ class AIService:
         lang: str = "ru"
     ) -> str:
         """
-        Analyze or translate multiple photos/images (album/batch) simultaneously.
+        Analyze, translate, or scan (OCR) multiple photos/images (album/batch) simultaneously.
         Merges sequence of pages, deduplicates overlapping fragments, and produces
-        a unified document analysis and translation.
+        a unified document.
         """
         target_lang = get_target_language_name(lang)
         count = len(images_bytes)
@@ -143,6 +183,8 @@ class AIService:
 
         if action == "translate":
             prompt = get_text("ai_prompt_translate_album", lang, count=count, target_lang=target_lang)
+        elif action == "scan":
+            prompt = get_text("ai_prompt_scan_album", lang, count=count)
         else:
             prompt = get_text("ai_prompt_analyze_album", lang, count=count, target_lang=target_lang)
 

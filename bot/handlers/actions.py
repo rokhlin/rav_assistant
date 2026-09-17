@@ -158,6 +158,59 @@ async def callback_analyze(query: CallbackQuery, state: FSMContext, lang: str = 
         logger.error(f"Error during re-analysis: {e}", exc_info=True)
         await safe_edit_text(status_msg, get_text("err_analysis", lang, error=str(e)))
 
+@router.callback_query(F.data == "act_scan")
+async def callback_scan(query: CallbackQuery, state: FSMContext, lang: str = "ru"):
+    data = await state.get_data()
+    content_type = data.get("last_content_type")
+    
+    await query.answer(get_text("toast_scanning", lang))
+    status_msg = await safe_reply(
+        query.message,
+        get_text("status_scanning", lang),
+        parse_mode="Markdown"
+    )
+
+    try:
+        result = ""
+        file_bytes = bytes.fromhex(data["last_file_bytes"]) if data.get("last_file_bytes") else None
+        
+        if content_type == "image" and file_bytes:
+            mime = data.get("last_mime_type", "image/jpeg")
+            result = await ai_service.scan_image(
+                image_bytes=file_bytes,
+                mime_type=mime,
+                custom_instruction=data.get("last_caption"),
+                lang=lang
+            )
+        elif content_type == "pdf" and (file_bytes or data.get("last_extracted_text")):
+            result = await ai_service.scan_document_multimodal(
+                file_bytes=file_bytes or b"",
+                mime_type="application/pdf",
+                text_content=data.get("last_extracted_text"),
+                custom_instruction=data.get("last_caption"),
+                lang=lang
+            )
+        elif data.get("last_extracted_text"):
+            result = data["last_extracted_text"]
+        else:
+            await safe_edit_text(status_msg, get_text("err_data_expired_analyze", lang))
+            return
+
+        await state.update_data(last_extracted_text=result)
+
+        kb = get_media_actions_keyboard(file_type=content_type or "doc", current_action="scan", lang=lang)
+        await send_chunked_response(
+            message=query.message,
+            status_msg=status_msg,
+            full_text=result,
+            reply_markup=kb,
+            lang=lang
+        )
+
+    except Exception as e:
+        logger.error(f"Error during scan: {e}", exc_info=True)
+        await safe_edit_text(status_msg, get_text("err_scan", lang, error=str(e)))
+
 @router.callback_query(F.data == "act_save_cloud")
 async def callback_save_cloud(query: CallbackQuery, state: FSMContext, lang: str = "ru"):
     data = await state.get_data()

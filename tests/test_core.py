@@ -233,20 +233,36 @@ def test_localized_keyboards():
     # Reply keyboard buttons
     kb_ru = get_main_menu_keyboard("ru")
     assert any("Анализ и перевод" in btn.text for row in kb_ru.keyboard for btn in row)
+    assert any("Сканирование" in btn.text for row in kb_ru.keyboard for btn in row)
     assert any("Язык" in btn.text for row in kb_ru.keyboard for btn in row)
 
     kb_en = get_main_menu_keyboard("en")
     assert any("Analyze & Translate" in btn.text for row in kb_en.keyboard for btn in row)
+    assert any("Scan text" in btn.text for row in kb_en.keyboard for btn in row)
     assert any("Language" in btn.text for row in kb_en.keyboard for btn in row)
 
     kb_he = get_main_menu_keyboard("he")
     assert any("ניתוח ותרגום" in btn.text for row in kb_he.keyboard for btn in row)
+    assert any("סריקה" in btn.text for row in kb_he.keyboard for btn in row)
     assert any("שפה" in btn.text for row in kb_he.keyboard for btn in row)
 
     # Cancel keyboard
     assert "Отмена" in get_cancel_keyboard("ru").inline_keyboard[0][0].text
     assert "Cancel" in get_cancel_keyboard("en").inline_keyboard[0][0].text
     assert "ביטול" in get_cancel_keyboard("he").inline_keyboard[0][0].text
+
+    # Media actions keyboard
+    kb_act_analyze = get_media_actions_keyboard(file_type="image", current_action="analyze", lang="ru")
+    datas_analyze = [b.callback_data for row in kb_act_analyze.inline_keyboard for b in row]
+    assert "act_translate" in datas_analyze
+    assert "act_scan" in datas_analyze
+    assert "act_analyze" not in datas_analyze
+
+    kb_act_scan = get_media_actions_keyboard(file_type="image", current_action="scan", lang="ru")
+    datas_scan = [b.callback_data for row in kb_act_scan.inline_keyboard for b in row]
+    assert "act_translate" in datas_scan
+    assert "act_analyze" in datas_scan
+    assert "act_scan" not in datas_scan
 
     # Language selection keyboard
     lang_kb = get_language_keyboard("en")
@@ -712,6 +728,52 @@ async def test_ai_service_structure_note_formats(monkeypatch):
     note_table = await service.structure_note("Сделай мне таблицу: пункт 1 картошка")
     assert note_table["title"] == "Таблица сравнения"
     assert "| Пункт | Описание |" in note_table["content"]
+
+
+@pytest.mark.asyncio
+async def test_scan_feature_and_prompts(monkeypatch):
+    from unittest.mock import AsyncMock
+    from bot.services.ai_service import AIService
+    from bot.texts import BUTTON_SCAN_ALL
+
+    assert "📷 Сканирование" in BUTTON_SCAN_ALL
+    assert "📷 Scan text" in BUTTON_SCAN_ALL
+    assert "📷 סריקה" in BUTTON_SCAN_ALL
+
+    service = AIService()
+    captured_vision = []
+    async def fake_generate_vision(prompt: str, image_bytes: bytes, mime_type: str) -> str:
+        captured_vision.append((prompt, image_bytes, mime_type))
+        return "Распознанный текст накладной"
+
+    monkeypatch.setattr(service, "_generate_vision", fake_generate_vision)
+
+    # 1. Scan single image
+    res = await service.scan_image(b"fake_image_bytes", "image/jpeg", lang="ru")
+    assert res == "Распознанный текст накладной"
+    assert "оптическое распознавание текста (OCR)" in captured_vision[-1][0]
+    assert "Не переводите" in captured_vision[-1][0]
+
+    # 2. Batch album scan
+    mock_batch = AsyncMock(return_value="Сквозной объединённый текст альбома")
+    monkeypatch.setattr(service, "_call_gemini_with_fallback", mock_batch)
+    res_batch = await service.analyze_document_images_batch(
+        images_bytes=[b"img1", b"img2"],
+        action="scan",
+        lang="ru"
+    )
+    assert res_batch == "Сквозной объединённый текст альбома"
+    prompt_used = mock_batch.call_args[0][0][-1]
+    assert "серия из 2 изображений" in prompt_used
+    assert "Не переводите" in prompt_used
+
+    # 3. Multimodal scan with digital text
+    res_pdf_text = await service.scan_document_multimodal(
+        file_bytes=b"",
+        text_content="Digital PDF text content",
+        lang="ru"
+    )
+    assert res_pdf_text == "Digital PDF text content"
 
 
 

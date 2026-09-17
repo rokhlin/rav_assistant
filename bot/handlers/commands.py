@@ -13,6 +13,7 @@ from bot.texts import (
     BUTTON_STATUS_ALL,
     BUTTON_TRANSLATE_ALL,
     BUTTON_ANALYZE_ALL,
+    BUTTON_SCAN_ALL,
     BUTTON_SAVE_ALL,
     BUTTON_NOTE_ALL,
     BUTTON_LANG_ALL,
@@ -25,6 +26,7 @@ def get_bot_commands(lang: str = "ru") -> List[BotCommand]:
     return [
         BotCommand(command="analyze", description=get_text("cmd_desc_analyze", lang)),
         BotCommand(command="translate", description=get_text("cmd_desc_translate", lang)),
+        BotCommand(command="scan", description=get_text("cmd_desc_scan", lang)),
         BotCommand(command="save", description=get_text("cmd_desc_save", lang)),
         BotCommand(command="note", description=get_text("cmd_desc_note", lang)),
         BotCommand(command="language", description=get_text("cmd_desc_language", lang)),
@@ -69,6 +71,16 @@ async def cmd_analyze(message: Message, state: FSMContext, lang: str = "ru"):
     await state.set_state(BotStates.waiting_for_analyze)
     await message.answer(
         get_text("mode_analyze", lang),
+        reply_markup=get_cancel_keyboard(lang),
+        parse_mode="Markdown"
+    )
+
+@router.message(Command("scan"))
+@router.message(F.text.in_(BUTTON_SCAN_ALL))
+async def cmd_scan(message: Message, state: FSMContext, lang: str = "ru"):
+    await state.set_state(BotStates.waiting_for_scan)
+    await message.answer(
+        get_text("mode_scan", lang),
         reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )

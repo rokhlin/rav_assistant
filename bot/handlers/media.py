@@ -26,7 +26,8 @@ async def _process_and_reply(
     mime_type: str = "image/jpeg",
     raw_file_bytes: bytes = None,
     original_filename: str = "document",
-    lang: str = "ru"
+    lang: str = "ru",
+    state: Optional[FSMContext] = None
 ):
     """
     Universal content processing (image/text/doc/pdf) based on action and language.
@@ -41,6 +42,13 @@ async def _process_and_reply(
         if content_type == "image" and image_bytes:
             if action == "analyze":
                 result = await ai_service.analyze_document_image(
+                    image_bytes=image_bytes,
+                    mime_type=mime_type,
+                    custom_instruction=custom_instruction,
+                    lang=lang
+                )
+            elif action == "scan":
+                result = await ai_service.scan_image(
                     image_bytes=image_bytes,
                     mime_type=mime_type,
                     custom_instruction=custom_instruction,
@@ -61,6 +69,14 @@ async def _process_and_reply(
                     custom_instruction=custom_instruction,
                     lang=lang
                 )
+            elif action == "scan":
+                result = await ai_service.scan_document_multimodal(
+                    file_bytes=raw_file_bytes or b"",
+                    mime_type="application/pdf",
+                    text_content=text_content,
+                    custom_instruction=custom_instruction,
+                    lang=lang
+                )
             else:
                 result = await ai_service.translate_document_multimodal(
                     file_bytes=raw_file_bytes or b"",
@@ -75,12 +91,16 @@ async def _process_and_reply(
                     custom_instruction=custom_instruction,
                     lang=lang
                 )
+            elif action == "scan":
+                result = text_content
             else:
                 result = await ai_service.translate_text(text=text_content, lang=lang)
         else:
             await safe_edit_text(status_msg, get_text("err_cannot_extract", lang))
             return
 
+        if state:
+            await state.update_data(last_extracted_text=result)
         await safe_edit_text(status_msg, get_text("progress_processing", lang))
         
         # Inline action buttons in selected language
@@ -112,7 +132,13 @@ async def handle_photo(
     """
     if album and len(album) > 1:
         current_state = await state.get_state()
-        action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
+        if current_state == BotStates.waiting_for_translate:
+            action = "translate"
+        elif current_state == BotStates.waiting_for_scan:
+            action = "scan"
+        else:
+            action = "analyze"
+
         target_lang_name = get_target_language_name(lang)
         custom_instruction = None
         for m in album:
@@ -120,7 +146,10 @@ async def handle_photo(
                 custom_instruction = m.caption
                 break
 
-        wait_text = get_text("status_analyzing_album", lang, count=len(album))
+        if action == "scan":
+            wait_text = get_text("status_scanning_album", lang, count=len(album))
+        else:
+            wait_text = get_text("status_analyzing_album", lang, count=len(album))
         status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
         images_bytes = []
@@ -177,10 +206,20 @@ async def handle_photo(
 
     current_state = await state.get_state()
     custom_instruction = message.caption or None
-    action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
+    if current_state == BotStates.waiting_for_translate:
+        action = "translate"
+    elif current_state == BotStates.waiting_for_scan:
+        action = "scan"
+    else:
+        action = "analyze"
     
     target_lang_name = get_target_language_name(lang)
-    wait_text = get_text("status_analyzing_and_translating", lang) if action == "analyze" else get_text("status_translating", lang, target_lang=target_lang_name)
+    if action == "scan":
+        wait_text = get_text("status_scanning", lang)
+    elif action == "translate":
+        wait_text = get_text("status_translating", lang, target_lang=target_lang_name)
+    else:
+        wait_text = get_text("status_analyzing_and_translating", lang)
     status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     photo = message.photo[-1]  # Highest resolution
@@ -219,7 +258,8 @@ async def handle_photo(
         image_bytes=image_bytes,
         mime_type="image/jpeg",
         original_filename="photo.jpg",
-        lang=lang
+        lang=lang,
+        state=state
     )
     if current_state:
         await state.clear()
@@ -235,10 +275,20 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
     filename = doc.file_name or "document"
     mime = doc.mime_type or ""
     custom_instruction = message.caption or None
-    action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
+    if current_state == BotStates.waiting_for_translate:
+        action = "translate"
+    elif current_state == BotStates.waiting_for_scan:
+        action = "scan"
+    else:
+        action = "analyze"
     
     target_lang_name = get_target_language_name(lang)
-    wait_text = get_text("status_analyzing_and_translating", lang) if action == "analyze" else get_text("status_translating", lang, target_lang=target_lang_name)
+    if action == "scan":
+        wait_text = get_text("status_scanning", lang)
+    elif action == "translate":
+        wait_text = get_text("status_translating", lang, target_lang=target_lang_name)
+    else:
+        wait_text = get_text("status_analyzing_and_translating", lang)
     status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     file_info = await bot.get_file(doc.file_id)
@@ -321,7 +371,8 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
         mime_type=mime or "image/jpeg",
         raw_file_bytes=file_bytes,
         original_filename=filename,
-        lang=lang
+        lang=lang,
+        state=state
     )
     if current_state:
         await state.clear()
@@ -339,9 +390,20 @@ async def handle_plain_text(message: Message, state: FSMContext, lang: str = "ru
     if text in ALL_MENU_BUTTONS:
         return
 
-    action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
+    if current_state == BotStates.waiting_for_translate:
+        action = "translate"
+    elif current_state == BotStates.waiting_for_scan:
+        action = "scan"
+    else:
+        action = "analyze"
+
     target_lang_name = get_target_language_name(lang)
-    wait_text = get_text("status_analyzing_and_translating", lang) if action == "analyze" else get_text("status_translating", lang, target_lang=target_lang_name)
+    if action == "scan":
+        wait_text = get_text("status_scanning", lang)
+    elif action == "translate":
+        wait_text = get_text("status_translating", lang, target_lang=target_lang_name)
+    else:
+        wait_text = get_text("status_analyzing_and_translating", lang)
     status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     await state.update_data(
@@ -356,7 +418,8 @@ async def handle_plain_text(message: Message, state: FSMContext, lang: str = "ru
         action=action,
         status_msg=status_msg,
         text_content=text,
-        lang=lang
+        lang=lang,
+        state=state
     )
     if current_state:
         await state.clear()

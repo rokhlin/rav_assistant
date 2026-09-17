@@ -11,14 +11,15 @@ def get_main_menu_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
             KeyboardButton(text=get_text("btn_translate", lang)),
         ],
         [
+            KeyboardButton(text=get_text("btn_scan", lang)),
             KeyboardButton(text=get_text("btn_note", lang)),
+        ],
+        [
             KeyboardButton(text=get_text("btn_save", lang)),
-        ],
-        [
             KeyboardButton(text=get_text("btn_status", lang)),
-            KeyboardButton(text=get_text("btn_help", lang)),
         ],
         [
+            KeyboardButton(text=get_text("btn_help", lang)),
             KeyboardButton(text=get_text("btn_language", lang)),
         ]
     ]
