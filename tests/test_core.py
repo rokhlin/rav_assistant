@@ -43,7 +43,7 @@ async def test_storage_service(tmp_path):
     assert 'title: "Оплата счета за интернет"' in content
     assert 'tags: ["счета", "интернет"]' in content
     assert "- [ ] Оплатить до 15 числа" in content
-    assert "Исходный текст / расшифровка" in content
+    assert "Исходный текст / расшифровка" not in content
 
 def test_docx_parser():
     # Create test .docx in memory
@@ -585,6 +585,133 @@ async def test_auth_middleware(tmp_path, monkeypatch):
     event_callback.data = "req_access"
     res_cb = await middleware(next_handler, event_callback, {})
     assert res_cb == "OK"
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_first_user_bootstrap(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from bot.middlewares.auth import AuthMiddleware
+    from bot.services.user_manager import UserManagerService
+
+    fresh_mgr = UserManagerService(config_file=tmp_path / "fresh_users.json")
+    monkeypatch.setattr("bot.middlewares.auth.user_manager", fresh_mgr)
+    monkeypatch.setattr("bot.handlers.admin.user_manager", fresh_mgr)
+
+    middleware = AuthMiddleware()
+    next_handler = AsyncMock(return_value="OK")
+
+    # First user triggers bootstrap as admin
+    event_first = MagicMock()
+    event_first.from_user.id = 555
+    event_first.from_user.first_name = "Creator"
+    event_first.from_user.last_name = "Admin"
+    event_first.from_user.username = "creator_bot"
+
+    res = await middleware(next_handler, event_first, {})
+    assert res == "OK"
+    assert fresh_mgr.is_allowed(555) is True
+    assert fresh_mgr.is_admin(555) is True
+    assert fresh_mgr.get_admin_ids() == [555]
+
+    # Second user is unauthorized and auto-generates access request
+    event_second = MagicMock()
+    event_second.from_user.id = 777
+    event_second.from_user.first_name = "Newbie"
+    event_second.from_user.last_name = ""
+    event_second.from_user.username = "newbie77"
+    event_second.answer = AsyncMock()
+
+    mock_bot = AsyncMock()
+    mock_bot.send_message = AsyncMock()
+
+    res2 = await middleware(next_handler, event_second, {"bot": mock_bot})
+    assert res2 is None
+    assert event_second.answer.called
+    assert mock_bot.send_message.called
+
+
+@pytest.mark.asyncio
+async def test_media_group_middleware():
+    from unittest.mock import AsyncMock, MagicMock
+    from bot.middlewares.album import MediaGroupMiddleware
+
+    middleware = MediaGroupMiddleware(latency=0.05)
+    next_handler = AsyncMock(return_value="PROCESSED_ALBUM")
+
+    # Three messages in album
+    msg1 = MagicMock()
+    msg1.media_group_id = "mg_123"
+    msg2 = MagicMock()
+    msg2.media_group_id = "mg_123"
+    msg3 = MagicMock()
+    msg3.media_group_id = "mg_123"
+
+    # Simulate sequential arrivals
+    task1 = asyncio.create_task(middleware(next_handler, msg1, {}))
+    await asyncio.sleep(0.01)
+    task2 = asyncio.create_task(middleware(next_handler, msg2, {}))
+    await asyncio.sleep(0.01)
+    task3 = asyncio.create_task(middleware(next_handler, msg3, {}))
+
+    res1 = await task1
+    res2 = await task2
+    res3 = await task3
+
+    assert res1 is None
+    assert res2 is None
+    assert res3 == "PROCESSED_ALBUM"
+    assert next_handler.call_count == 1
+    call_args = next_handler.call_args[0]
+    data = call_args[1]
+    assert "album" in data
+    assert len(data["album"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_ai_service_analyze_document_images_batch(monkeypatch):
+    from unittest.mock import AsyncMock
+    from bot.services.ai_service import AIService
+
+    service = AIService()
+    mock_generate = AsyncMock(return_value="Merged and deduplicated analysis result")
+    monkeypatch.setattr(service, "_call_gemini_with_fallback", mock_generate)
+
+    res = await service.analyze_document_images_batch(
+        images_bytes=[b"img1", b"img2"],
+        mime_types=["image/jpeg", "image/jpeg"],
+        action="analyze",
+        lang="ru"
+    )
+
+    assert res == "Merged and deduplicated analysis result"
+    assert mock_generate.called
+    parts = mock_generate.call_args[0][0]
+    assert len(parts) == 3  # 2 image parts + 1 prompt string
+
+
+@pytest.mark.asyncio
+async def test_ai_service_structure_note_formats(monkeypatch):
+    from unittest.mock import AsyncMock
+    from bot.services.ai_service import AIService
+
+    service = AIService()
+
+    # 1. Test markdown checklists for shopping list
+    mock_checklist_response = '```json\n{"title": "Список покупок", "tags": ["покупки"], "content": "- [ ] Картошка\\n- [ ] Сыр\\n- [ ] Молоко"}\n```'
+    monkeypatch.setattr(service, "_generate_text", AsyncMock(return_value=mock_checklist_response))
+
+    note = await service.structure_note("Подготовь список покупок: картошка, сыр, молоко")
+    assert note["title"] == "Список покупок"
+    assert "- [ ] Картошка" in note["content"]
+    assert "Подготовь список покупок" not in note["content"]
+
+    # 2. Test markdown table formatting
+    mock_table_response = '{"title": "Таблица сравнения", "tags": ["работа"], "content": "| Пункт | Описание |\\n|---|---|\\n| 1 | Картошка |"}'
+    monkeypatch.setattr(service, "_generate_text", AsyncMock(return_value=mock_table_response))
+
+    note_table = await service.structure_note("Сделай мне таблицу: пункт 1 картошка")
+    assert note_table["title"] == "Таблица сравнения"
+    assert "| Пункт | Описание |" in note_table["content"]
 
 
 

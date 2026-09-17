@@ -127,9 +127,6 @@ class UserManagerService:
         """Check if user has access."""
         if not user_id:
             return False
-        # If no users configured at all, system is open
-        if not self._users:
-            return True
         return str(user_id) in self._users
 
     def is_admin(self, user_id: Optional[int]) -> bool:
@@ -153,6 +150,23 @@ class UserManagerService:
             if first_uid.isdigit():
                 admins.append(int(first_uid))
         return admins
+
+    def has_any_admins(self) -> bool:
+        """Check if there is at least one administrator registered."""
+        return len(self.get_admin_ids()) > 0
+
+    def bootstrap_first_user_as_admin(
+        self,
+        user_id: int,
+        name: str,
+        username: Optional[str] = None
+    ) -> bool:
+        """If system has no admins, register the first user as creator/admin."""
+        if not self.has_any_admins():
+            self.add_user(user_id=user_id, name=name, role="admin", username=username)
+            logger.info(f"User {user_id} ({name}) bootstrapped as creator/admin.")
+            return True
+        return False
 
     def get_user_name(self, user_id: int) -> str:
         """Get user's display name."""

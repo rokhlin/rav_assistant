@@ -24,7 +24,20 @@ class STTService:
             ]
             try:
                 text = await ai_service._call_gemini_with_fallback(contents)
-                return text.strip()
+                cleaned_text = text.strip()
+                if prompt in cleaned_text:
+                    cleaned_text = cleaned_text.replace(prompt, "").strip()
+                for prefix in [
+                    "Вот транскрипция голосового сообщения:",
+                    "Вот транскрипция:",
+                    "Транскрипция:",
+                    "Транскрипция голосового сообщения:",
+                    "Here is the transcription:",
+                    "Transcription:"
+                ]:
+                    if cleaned_text.lower().startswith(prefix.lower()):
+                        cleaned_text = cleaned_text[len(prefix):].strip()
+                return cleaned_text
             except Exception as e:
                 logger.error(f"Gemini Audio Transcription error: {e}")
                 raise RuntimeError(f"Gemini transcription error: {e}")

@@ -1,5 +1,5 @@
 import logging
-from typing import Set
+from typing import Set, Any
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
@@ -26,6 +26,41 @@ _pending_access_requests: Set[int] = set()
 # Access Request Handlers (for unauthorized users)
 # ---------------------------------------------------------------------------
 
+async def send_access_request_to_admins(bot: Bot, user: Any) -> bool:
+    """Send access request notification to all administrators."""
+    user_id = user.id
+    if user_manager.is_allowed(user_id):
+        return False
+    if user_id in _pending_access_requests:
+        return False
+
+    _pending_access_requests.add(user_id)
+
+    full_name = f"{getattr(user, 'first_name', '') or ''} {getattr(user, 'last_name', '') or ''}".strip() or f"User {user_id}"
+    username_str = f"@{user.username}" if getattr(user, "username", None) else "—"
+
+    admin_ids = user_manager.get_admin_ids()
+    notified_any = False
+    for aid in admin_ids:
+        admin_lang = user_settings.get_language(aid)
+        alert_text = get_text(
+            "admin_new_request_notification",
+            admin_lang,
+            name=full_name,
+            username=username_str,
+            user_id=user_id
+        )
+        kb = get_admin_request_keyboard(applicant_id=user_id, applicant_name=getattr(user, "first_name", None) or full_name, lang=admin_lang)
+        try:
+            await bot.send_message(chat_id=aid, text=alert_text, reply_markup=kb, parse_mode="Markdown")
+            notified_any = True
+        except Exception as e:
+            logger.warning(f"Failed to send access request alert to admin {aid}: {e}")
+
+    logger.info(f"Access request from user {user_id} ({full_name}) sent to admins: {notified_any}")
+    return notified_any
+
+
 @router.callback_query(F.data == "req_access")
 async def callback_request_access(query: CallbackQuery, bot: Bot, lang: str = "ru"):
     """Handle unauthorized user pressing 'Request Access' button."""
@@ -43,31 +78,7 @@ async def callback_request_access(query: CallbackQuery, bot: Bot, lang: str = "r
         await query.answer(get_text("access_already_requested", lang), show_alert=True)
         return
 
-    _pending_access_requests.add(user_id)
-
-    full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or f"User {user_id}"
-    username_str = f"@{user.username}" if user.username else "—"
-
-    # Notify all administrators
-    admin_ids = user_manager.get_admin_ids()
-    notified_any = False
-    for aid in admin_ids:
-        admin_lang = user_settings.get_language(aid)
-        alert_text = get_text(
-            "admin_new_request_notification",
-            admin_lang,
-            name=full_name,
-            username=username_str,
-            user_id=user_id
-        )
-        kb = get_admin_request_keyboard(applicant_id=user_id, applicant_name=user.first_name or full_name, lang=admin_lang)
-        try:
-            await bot.send_message(chat_id=aid, text=alert_text, reply_markup=kb, parse_mode="Markdown")
-            notified_any = True
-        except Exception as e:
-            logger.warning(f"Failed to send access request alert to admin {aid}: {e}")
-
-    logger.info(f"Access request from user {user_id} ({full_name}) received. Notified admins: {notified_any}")
+    await send_access_request_to_admins(bot, user)
 
     # Confirm to applicant
     await query.answer()

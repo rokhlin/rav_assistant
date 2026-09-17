@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from config import settings
 from bot.texts import get_text, get_target_language_name
 
@@ -123,9 +123,63 @@ class AIService:
         err_msg = get_text("err_cannot_extract", lang)
         raise RuntimeError(err_msg)
 
+    async def analyze_document_images_batch(
+        self,
+        images_bytes: List[bytes],
+        mime_types: Optional[List[str]] = None,
+        custom_instruction: Optional[str] = None,
+        action: str = "analyze",
+        lang: str = "ru"
+    ) -> str:
+        """
+        Analyze or translate multiple photos/images (album/batch) simultaneously.
+        Merges sequence of pages, deduplicates overlapping fragments, and produces
+        a unified document analysis and translation.
+        """
+        target_lang = get_target_language_name(lang)
+        count = len(images_bytes)
+        if not mime_types:
+            mime_types = ["image/jpeg"] * count
+
+        if action == "translate":
+            prompt = get_text("ai_prompt_translate_album", lang, count=count, target_lang=target_lang)
+        else:
+            prompt = get_text("ai_prompt_analyze_album", lang, count=count, target_lang=target_lang)
+
+        if custom_instruction:
+            prompt += get_text("ai_custom_instruction", lang, instruction=custom_instruction)
+
+        if (self.provider == "gemini" or self.gemini_client):
+            from google.genai import types
+            parts = [
+                types.Part.from_bytes(data=img, mime_type=mime)
+                for img, mime in zip(images_bytes, mime_types)
+            ]
+            parts.append(prompt)
+            return await self._call_gemini_with_fallback(parts)
+
+        elif self.openai_client:
+            import base64
+            content_items: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+            for img, mime in zip(images_bytes, mime_types):
+                b64 = base64.b64encode(img).decode("utf-8")
+                content_items.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"}
+                })
+            response = await self.openai_client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[{"role": "user", "content": content_items}]
+            )
+            return response.choices[0].message.content or ""
+        else:
+            raise RuntimeError("No API key configured for AI provider!")
+
     async def structure_note(self, raw_text: str, lang: str = "ru") -> Dict[str, Any]:
         """
         Convert raw text or voice transcript into structured note.
+        Understands formatting instructions (shopping lists, tables, checklists)
+        and extracts pure content without leaking meta-instructions or prompts.
         """
         prompt = get_text("ai_prompt_structure_note", lang, raw_text=raw_text)
 
@@ -133,21 +187,30 @@ class AIService:
         default_title = get_text("default_note_title", lang)
         default_tag = get_text("tag_note", lang)
         try:
-            # Strip markdown code blocks ```json ... ``` if present
+            import re
             cleaned = response_text.strip()
-            if cleaned.startswith("```"):
-                lines = cleaned.split("\n")
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines and lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                cleaned = "\n".join(lines).strip()
+            # Extract JSON block between ```json ... ``` or ``` ... ```
+            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+            if match:
+                cleaned = match.group(1).strip()
+            else:
+                if not cleaned.startswith("{"):
+                    s = cleaned.find("{")
+                    e = cleaned.rfind("}")
+                    if s != -1 and e != -1:
+                        cleaned = cleaned[s:e + 1].strip()
 
             data = json.loads(cleaned)
+            content = data.get("content", "").strip()
+            title = data.get("title", default_title).strip()
+            tags = data.get("tags", [default_tag])
+            if not content:
+                content = raw_text.strip()
+
             return {
-                "title": data.get("title", default_title),
-                "tags": data.get("tags", [default_tag]),
-                "content": data.get("content", raw_text)
+                "title": title or default_title,
+                "tags": tags if isinstance(tags, list) and tags else [default_tag],
+                "content": content
             }
         except Exception as e:
             logger.warning(f"Failed to parse note JSON ({e}), using default template")
@@ -155,7 +218,7 @@ class AIService:
             return {
                 "title": first_line or default_title,
                 "tags": [default_tag],
-                "content": raw_text
+                "content": raw_text.strip()
             }
 
     async def _call_gemini_with_fallback(self, contents: Any) -> str:

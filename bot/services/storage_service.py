@@ -104,10 +104,6 @@ tags: [{tags_yaml}]
 
 {content.strip()}
 """
-        if raw_text and raw_text.strip() != content.strip():
-            header = get_text("orig_text_header", lang)
-            md_content += f"\n\n---\n### {header}\n> {raw_text.strip()}\n"
-
         async with aiofiles.open(destination, "w", encoding="utf-8") as f:
             await f.write(md_content)
 

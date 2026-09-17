@@ -12,6 +12,7 @@ from bot.handlers.media import router as media_router
 from bot.handlers.actions import router as actions_router
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.language import LanguageMiddleware
+from bot.middlewares.album import MediaGroupMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,11 +33,12 @@ async def main():
     )
     dp = Dispatcher()
 
-    # Authorization and language middlewares
+    # Authorization, language and media group middlewares
     dp.message.middleware(AuthMiddleware())
     dp.callback_query.middleware(AuthMiddleware())
     dp.message.middleware(LanguageMiddleware())
     dp.callback_query.middleware(LanguageMiddleware())
+    dp.message.middleware(MediaGroupMiddleware())
 
     # Register routers
     dp.include_router(commands_router)

@@ -97,11 +97,83 @@ async def _process_and_reply(
         await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
 
 @router.message(F.photo)
-async def handle_photo(message: Message, bot: Bot, state: FSMContext, lang: str = "ru"):
+async def handle_photo(
+    message: Message,
+    bot: Bot,
+    state: FSMContext,
+    album: Optional[list] = None,
+    lang: str = "ru"
+):
     """
     Handle photos and images.
-    Defaults to document analysis and translation in the selected language.
+    Supports single photos as well as multi-photo albums (media groups).
+    Analyzes, deduplicates overlapping sections, and merges into unified document.
     """
+    if album and len(album) > 1:
+        current_state = await state.get_state()
+        action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
+        target_lang_name = get_target_language_name(lang)
+        custom_instruction = None
+        for m in album:
+            if m.caption:
+                custom_instruction = m.caption
+                break
+
+        wait_text = get_text("status_analyzing_album", lang, count=len(album))
+        status_msg = await message.answer(wait_text, parse_mode="Markdown")
+
+        images_bytes = []
+        for m in album:
+            if m.photo:
+                ph = m.photo[-1]
+                fi = await bot.get_file(ph.file_id)
+                stream = io.BytesIO()
+                await bot.download_file(fi.file_path, destination=stream)
+                images_bytes.append(stream.getvalue())
+
+        if current_state == BotStates.waiting_for_save:
+            user_id = message.from_user.id if message.from_user else None
+            saved_names = []
+            for i, img_b in enumerate(images_bytes):
+                saved = await storage_service.save_to_cloud(img_b, f"photo_{i+1}.jpg", user_id=user_id)
+                saved_names.append(saved["filename"])
+            await safe_edit_text(status_msg, f"✅ Сохранено в облако {len(saved_names)} файлов.")
+            await state.clear()
+            return
+
+        try:
+            await safe_edit_text(status_msg, get_text("progress_sending_ai", lang))
+            result = await ai_service.analyze_document_images_batch(
+                images_bytes=images_bytes,
+                custom_instruction=custom_instruction,
+                action=action,
+                lang=lang
+            )
+            await safe_edit_text(status_msg, get_text("progress_processing", lang))
+
+            await state.update_data(
+                last_extracted_text=result,
+                last_content_type="text",
+                last_filename="merged_document.txt",
+                last_caption=custom_instruction
+            )
+
+            reply_kb = get_media_actions_keyboard(file_type="image", current_action=action, lang=lang)
+            await send_chunked_response(
+                message=message,
+                status_msg=status_msg,
+                full_text=result,
+                reply_markup=reply_kb,
+                lang=lang
+            )
+        except Exception as e:
+            logger.error(f"Error processing photo album: {e}", exc_info=True)
+            await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
+
+        if current_state:
+            await state.clear()
+        return
+
     current_state = await state.get_state()
     custom_instruction = message.caption or None
     action = "translate" if current_state == BotStates.waiting_for_translate else "analyze"
