@@ -1,5 +1,6 @@
 import io
 import logging
+from typing import Optional, List
 from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
