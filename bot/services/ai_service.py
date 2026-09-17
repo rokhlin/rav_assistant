@@ -207,6 +207,19 @@ class AIService:
             if not content:
                 content = raw_text.strip()
 
+            # Guard against model returning generic refusal placeholders
+            content_lower = content.lower()
+            if any(refusal in content_lower for refusal in [
+                "текст не предоставлен",
+                "текст отсутствует",
+                "исходный текст не предоставлен",
+                "пожалуйста, укажите содержимое",
+                "no content provided",
+                "no text provided"
+            ]):
+                content = raw_text.strip()
+                title = raw_text.strip().split("\n")[0][:40]
+
             return {
                 "title": title or default_title,
                 "tags": tags if isinstance(tags, list) and tags else [default_tag],

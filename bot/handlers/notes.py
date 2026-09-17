@@ -31,9 +31,14 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, la
         await bot.download_file(file_info.file_path, destination=file_stream)
         audio_bytes = file_stream.getvalue()
 
+        # Determine audio MIME type
+        mime_type = "audio/ogg"
+        if message.audio and message.audio.mime_type:
+            mime_type = message.audio.mime_type
+
         # Transcription
-        raw_text = await stt_service.transcribe(audio_bytes, mime_type="audio/ogg", lang=lang)
-        if not raw_text:
+        raw_text = await stt_service.transcribe(audio_bytes, mime_type=mime_type, lang=lang)
+        if not raw_text or not raw_text.strip():
             await safe_edit_text(status_msg, get_text("err_stt_failed", lang))
             return
 
