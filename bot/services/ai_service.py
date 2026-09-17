@@ -223,15 +223,24 @@ class AIService:
         Understands formatting instructions (shopping lists, tables, checklists)
         and extracts pure content without leaking meta-instructions or prompts.
         """
-        prompt = get_text("ai_prompt_structure_note", lang, raw_text=raw_text)
-
-        response_text = await self._generate_text(prompt)
         default_title = get_text("default_note_title", lang)
         default_tag = get_text("tag_note", lang)
+        
+        # Derive fallback title from first line of text
+        first_line = ""
+        for line in raw_text.strip().splitlines():
+            clean_line = line.strip().lstrip("#-* ").strip()
+            if clean_line:
+                first_line = clean_line[:40]
+                break
+        fallback_title = first_line or default_title
+
+        prompt = get_text("ai_prompt_structure_note", lang, raw_text=raw_text)
+
         try:
+            response_text = await self._generate_text(prompt)
             import re
             cleaned = response_text.strip()
-            # Extract JSON block between ```json ... ``` or ``` ... ```
             match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
             if match:
                 cleaned = match.group(1).strip()
@@ -244,36 +253,111 @@ class AIService:
 
             data = json.loads(cleaned)
             content = data.get("content", "").strip()
-            title = data.get("title", default_title).strip()
+            title = data.get("title", "").strip() or fallback_title
             tags = data.get("tags", [default_tag])
-            if not content:
-                content = raw_text.strip()
 
-            # Guard against model returning generic refusal placeholders
-            content_lower = content.lower()
-            if any(refusal in content_lower for refusal in [
+            # Comprehensive check against prompt instruction leakage and generic refusal placeholders
+            leakage_patterns = [
+                # Refusals
                 "текст не предоставлен",
                 "текст отсутствует",
                 "исходный текст не предоставлен",
                 "пожалуйста, укажите содержимое",
                 "no content provided",
-                "no text provided"
-            ]):
+                "no text provided",
+                "missing content",
+                # System prompt text leakage (English)
+                "voice note pending",
+                "review pending",
+                "pending voice transcription",
+                "finalized transcription",
+                "update note with finalized",
+                "extract the core essence",
+                "apply formatting instructions",
+                "remove meta phrases",
+                "strip boilerplate",
+                # System prompt text leakage (Russian)
+                "инструкция по обработке",
+                "выделить полезное",
+                "оформить задачи",
+                "удалить вводные",
+                "сформулировать краткий заголовок",
+                "источник информации",
+                "категорически запрещено",
+                "текст заметки в формате markdown",
+                # Hebrew leakage
+                "לא סופק תוכן",
+                "מקור מידע",
+                "חל איסור מוחלט"
+            ]
+
+            combined_lower = f"{title.lower()} {content.lower()}"
+            has_leakage = any(pat in combined_lower for pat in leakage_patterns)
+
+            if has_leakage or not content:
+                logger.warning("Prompt leakage or empty content detected in structure_note output, falling back to raw text")
                 content = raw_text.strip()
-                title = raw_text.strip().split("\n")[0][:40]
+                if any(pat in title.lower() for pat in leakage_patterns):
+                    title = fallback_title
 
             return {
-                "title": title or default_title,
+                "title": title or fallback_title,
                 "tags": tags if isinstance(tags, list) and tags else [default_tag],
                 "content": content
             }
         except Exception as e:
             logger.warning(f"Failed to parse note JSON ({e}), using default template")
-            first_line = raw_text.strip().split("\n")[0][:40]
             return {
-                "title": first_line or default_title,
+                "title": fallback_title,
                 "tags": [default_tag],
                 "content": raw_text.strip()
+            }
+
+    async def extract_doc_note_meta(self, text: str, lang: str = "ru") -> Dict[str, Any]:
+        """
+        Extract concise title and tags from document text or translation without altering content.
+        """
+        default_title = get_text("default_note_title", lang)
+        default_tag = get_text("tag_doc", lang)
+
+        # Derive fallback title from first non-empty line
+        first_line = ""
+        for line in text.strip().splitlines():
+            clean = line.strip().lstrip("#-* ").strip()
+            if clean and not clean.startswith("---"):
+                first_line = clean[:40]
+                break
+        fallback_title = first_line or default_title
+
+        try:
+            prompt = get_text("ai_prompt_doc_note_meta", lang, text=text[:3000])
+            response_text = await self._generate_text(prompt)
+            import re
+            cleaned = response_text.strip()
+            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+            if match:
+                cleaned = match.group(1).strip()
+            else:
+                if not cleaned.startswith("{"):
+                    s = cleaned.find("{")
+                    e = cleaned.rfind("}")
+                    if s != -1 and e != -1:
+                        cleaned = cleaned[s:e + 1].strip()
+
+            data = json.loads(cleaned)
+            title = data.get("title", "").strip() or fallback_title
+            tags = data.get("tags", [default_tag])
+            if not isinstance(tags, list) or not tags:
+                tags = [default_tag]
+            return {
+                "title": title,
+                "tags": tags
+            }
+        except Exception as e:
+            logger.warning(f"Failed to extract document note metadata ({e}), using fallback")
+            return {
+                "title": fallback_title,
+                "tags": [default_tag]
             }
 
     async def _call_gemini_with_fallback(self, contents: Any) -> str:

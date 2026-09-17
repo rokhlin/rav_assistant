@@ -776,6 +776,107 @@ async def test_scan_feature_and_prompts(monkeypatch):
     assert res_pdf_text == "Digital PDF text content"
 
 
+@pytest.mark.asyncio
+async def test_ai_service_structure_note_leakage_fallback(monkeypatch):
+    from unittest.mock import AsyncMock
+    from bot.services.ai_service import AIService
+
+    service = AIService()
+
+    # 1. Simulate model hallucinating English prompt instructions
+    mock_leaked_response_en = '''```json
+{
+  "title": "Voice Note Pending",
+  "tags": ["task", "audio"],
+  "content": "- [ ] Review pending voice transcription\\n- [ ] Update note with finalized transcription details"
+}
+```'''
+    monkeypatch.setattr(service, "_generate_text", AsyncMock(return_value=mock_leaked_response_en))
+
+    user_voice = "Завтра в 15:00 встреча с архитектором по проекту дома"
+    note_en = await service.structure_note(user_voice, lang="en")
+    
+    # Must fallback to user's real voice text and not the prompt text
+    assert note_en["content"] == user_voice
+    assert "Review pending voice transcription" not in note_en["content"]
+    assert note_en["title"] != "Voice Note Pending"
+
+    # 2. Simulate model hallucinating Russian prompt instructions
+    mock_leaked_response_ru = '''{
+  "title": "Инструкция по обработке голосовых заметок",
+  "tags": ["заметки", "структура"],
+  "content": "- [ ] Выделить полезное содержимое и основные мысли\\n- [ ] Оформить задачи в виде чекбоксов\\n- [ ] Удалить вводные фразы"
+}'''
+    monkeypatch.setattr(service, "_generate_text", AsyncMock(return_value=mock_leaked_response_ru))
+
+    user_text = "Купить корм для кота и забрать посылку"
+    note_ru = await service.structure_note(user_text, lang="ru")
+
+    assert note_ru["content"] == user_text
+    assert "Выделить полезное содержимое" not in note_ru["content"]
+    assert note_ru["title"] != "Инструкция по обработке голосовых заметок"
+
+
+@pytest.mark.asyncio
+async def test_ai_service_extract_doc_note_meta(monkeypatch):
+    from unittest.mock import AsyncMock
+    from bot.services.ai_service import AIService
+
+    service = AIService()
+    mock_meta_response = '{"title": "Договор аренды жилья", "tags": ["документ", "аренда"]}'
+    monkeypatch.setattr(service, "_generate_text", AsyncMock(return_value=mock_meta_response))
+
+    doc_text = "📋 **Тип документа**: Договор аренды жилого помещения\n🎯 **Краткая суть**: Аренда квартиры на год."
+    meta = await service.extract_doc_note_meta(doc_text, lang="ru")
+
+    assert meta["title"] == "Договор аренды жилья"
+    assert "документ" in meta["tags"]
+    assert "аренда" in meta["tags"]
+
+
+@pytest.mark.asyncio
+async def test_callback_save_note_preserves_full_content(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from bot.handlers.actions import callback_save_note
+    from bot.services.storage_service import StorageService
+
+    # Use isolated StorageService
+    test_storage = StorageService(cloud_dir=tmp_path / "cloud", notes_dir=tmp_path / "notes")
+    monkeypatch.setattr("bot.handlers.actions.storage_service", test_storage)
+
+    # Mock extract_doc_note_meta
+    mock_extract_meta = AsyncMock(return_value={"title": "Анализ счёта за электричество", "tags": ["счета"]})
+    monkeypatch.setattr("bot.handlers.actions.ai_service.extract_doc_note_meta", mock_extract_meta)
+
+    # State has large multi-paragraph text (e.g., from translation or document analysis)
+    full_document_text = (
+        "📋 **Тип документа**: Квитанция на оплату электроэнергии\n"
+        "🎯 **Краткая суть**: Сумма к оплате 3450 руб до 25 сентября.\n"
+        "⚠️ **Что требуется от вас**: Оплатить по QR коду или в личном кабинете.\n"
+        "🌐 **Перевод ключевых положений**: Начислено за август: 450 кВтч."
+    )
+    mock_state = AsyncMock()
+    mock_state.get_data.return_value = {"last_extracted_text": full_document_text}
+
+    mock_query = AsyncMock()
+    mock_query.from_user.id = 12345
+    mock_query.message.text = "Last chunk of text"
+    mock_query.message.reply = AsyncMock()
+
+    await callback_save_note(mock_query, mock_state, lang="ru")
+
+    # Check that note was saved into storage
+    notes = list((tmp_path / "notes" / "12345").glob("*.md"))
+    assert len(notes) == 1
+    saved_md = notes[0].read_text(encoding="utf-8")
+
+    # Verify full content was preserved without loss
+    assert full_document_text in saved_md
+    assert 'title: "Анализ счёта за электричество"' in saved_md
+    assert 'tags: ["документ", "счета"]' in saved_md
+
+
+
 
 
 

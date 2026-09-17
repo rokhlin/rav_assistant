@@ -90,6 +90,7 @@ async def callback_translate(query: CallbackQuery, state: FSMContext, lang: str 
             await safe_edit_text(status_msg, get_text("err_data_expired", lang))
             return
 
+        await state.update_data(last_extracted_text=result, last_content_type="text")
         kb = get_media_actions_keyboard(file_type=content_type or "doc", current_action="translate", lang=lang)
         await send_chunked_response(
             message=query.message,
@@ -145,6 +146,7 @@ async def callback_analyze(query: CallbackQuery, state: FSMContext, lang: str = 
             await safe_edit_text(status_msg, get_text("err_data_expired_analyze", lang))
             return
 
+        await state.update_data(last_extracted_text=result, last_content_type="text")
         kb = get_media_actions_keyboard(file_type=content_type or "doc", current_action="analyze", lang=lang)
         await send_chunked_response(
             message=query.message,
@@ -240,22 +242,27 @@ async def callback_save_cloud(query: CallbackQuery, state: FSMContext, lang: str
 
 @router.callback_query(F.data == "act_save_note")
 async def callback_save_note(query: CallbackQuery, state: FSMContext, lang: str = "ru"):
-    message_text = query.message.text or ""
-    if not message_text:
+    data = await state.get_data()
+    full_text = data.get("last_extracted_text") or query.message.text or ""
+    if not full_text:
         await query.answer(get_text("err_no_text_for_note", lang), show_alert=True)
         return
 
     await query.answer(get_text("toast_forming_note", lang))
     try:
         user_id = query.from_user.id if query.from_user else None
-        structured = await ai_service.structure_note(message_text, lang=lang)
+        meta = await ai_service.extract_doc_note_meta(full_text, lang=lang)
         tag_doc = get_text("tag_doc", lang)
+        tags = meta.get("tags") or [tag_doc]
+        if tag_doc not in tags:
+            tags.insert(0, tag_doc)
+
         saved = await storage_service.save_note(
-            title=structured["title"],
-            content=structured["content"],
+            title=meta.get("title") or get_text("default_note_title", lang),
+            content=full_text,
             note_type="doc_summary",
-            tags=structured.get("tags", [tag_doc]),
-            raw_text=message_text,
+            tags=tags,
+            raw_text=full_text,
             lang=lang,
             user_id=user_id
         )
