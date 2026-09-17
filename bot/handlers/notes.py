@@ -10,7 +10,11 @@ from bot.services.stt_service import stt_service
 from bot.services.ai_service import ai_service
 from bot.services.storage_service import storage_service
 from bot.texts import get_text
-from bot.utils.telegram_helpers import safe_edit_text
+from bot.utils.telegram_helpers import (
+    safe_edit_text,
+    MAX_TELEGRAM_FILE_SIZE,
+    is_file_too_big_error,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="notes_router")
@@ -25,6 +29,11 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, la
     try:
         # Download audio
         audio_obj = message.voice or message.audio
+        if audio_obj and audio_obj.file_size and audio_obj.file_size > MAX_TELEGRAM_FILE_SIZE:
+            await safe_edit_text(status_msg, get_text("err_file_too_big", lang))
+            await state.clear()
+            return
+
         file_info = await bot.get_file(audio_obj.file_id)
         
         file_stream = io.BytesIO()
@@ -77,8 +86,14 @@ async def handle_voice_message(message: Message, bot: Bot, state: FSMContext, la
         await state.clear()
 
     except Exception as e:
+        if is_file_too_big_error(e):
+            logger.warning(f"Audio file too big for Telegram: {e}")
+            await safe_edit_text(status_msg, get_text("err_file_too_big", lang))
+            await state.clear()
+            return
         logger.error(f"Error processing audio note: {e}", exc_info=True)
         await safe_edit_text(status_msg, get_text("err_note_failed", lang, error=str(e)))
+        await state.clear()
 
 @router.message(BotStates.waiting_for_note, F.text)
 async def handle_text_note_in_state(message: Message, state: FSMContext, lang: str = "ru"):

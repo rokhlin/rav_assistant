@@ -4,6 +4,7 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.types import ErrorEvent, Message
 from config import settings
 from bot.handlers.commands import router as commands_router, BOT_COMMANDS
 from bot.handlers.admin import router as admin_router
@@ -13,6 +14,9 @@ from bot.handlers.actions import router as actions_router
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.language import LanguageMiddleware
 from bot.middlewares.album import MediaGroupMiddleware
+from bot.services.user_settings import user_settings
+from bot.texts import get_text
+from bot.utils.telegram_helpers import is_file_too_big_error
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,6 +24,44 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger("helper_bot")
+
+async def global_error_handler(event: ErrorEvent) -> bool:
+    """Catches unhandled errors during update processing and notifies user."""
+    logger.error(f"Global error handler caught: {event.exception}", exc_info=event.exception)
+
+    message = None
+    if event.update and event.update.message:
+        message = event.update.message
+    elif event.update and event.update.callback_query and event.update.callback_query.message:
+        if isinstance(event.update.callback_query.message, Message):
+            message = event.update.callback_query.message
+
+    if not message:
+        return True
+
+    user_id = None
+    if message.from_user:
+        user_id = message.from_user.id
+    elif event.update and event.update.callback_query and event.update.callback_query.from_user:
+        user_id = event.update.callback_query.from_user.id
+
+    lang = user_settings.get_language(user_id)
+
+    if is_file_too_big_error(event.exception):
+        text = get_text("err_file_too_big", lang)
+    else:
+        text = get_text("err_unexpected", lang)
+
+    try:
+        await message.reply(text, parse_mode="Markdown")
+    except Exception:
+        try:
+            await message.answer(text)
+        except Exception as e:
+            logger.warning(f"Failed to notify user in global error handler: {e}")
+
+    return True
+
 
 async def main():
     if not settings.TELEGRAM_BOT_TOKEN:
@@ -46,6 +88,9 @@ async def main():
     dp.include_router(actions_router)
     dp.include_router(notes_router)
     dp.include_router(media_router)
+
+    # Global error handler for unhandled exceptions
+    dp.error.register(global_error_handler)
 
     # Set command hints in Telegram menu
     try:

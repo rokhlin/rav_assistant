@@ -3,6 +3,7 @@ import logging
 from typing import Optional, List
 from aiogram import Router, F, Bot
 from aiogram.types import Message
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from bot.states import BotStates
 from bot.services.doc_parser import DocParser
@@ -10,7 +11,12 @@ from bot.services.ai_service import ai_service
 from bot.services.storage_service import storage_service
 from bot.keyboards.inline import get_media_actions_keyboard
 from bot.texts import get_text, get_target_language_name, ALL_MENU_BUTTONS
-from bot.utils.telegram_helpers import send_chunked_response, safe_edit_text
+from bot.utils.telegram_helpers import (
+    send_chunked_response,
+    safe_edit_text,
+    MAX_TELEGRAM_FILE_SIZE,
+    is_file_too_big_error,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="media_router")
@@ -156,10 +162,31 @@ async def handle_photo(
         for m in album:
             if m.photo:
                 ph = m.photo[-1]
-                fi = await bot.get_file(ph.file_id)
-                stream = io.BytesIO()
-                await bot.download_file(fi.file_path, destination=stream)
-                images_bytes.append(stream.getvalue())
+                if ph.file_size and ph.file_size > MAX_TELEGRAM_FILE_SIZE:
+                    await safe_edit_text(status_msg, get_text("err_file_too_big", lang))
+                    if current_state:
+                        await state.clear()
+                    return
+                try:
+                    fi = await bot.get_file(ph.file_id)
+                    stream = io.BytesIO()
+                    await bot.download_file(fi.file_path, destination=stream)
+                    images_bytes.append(stream.getvalue())
+                except TelegramBadRequest as e:
+                    if is_file_too_big_error(e):
+                        await safe_edit_text(status_msg, get_text("err_file_too_big", lang))
+                    else:
+                        logger.error(f"Telegram error downloading album photo: {e}", exc_info=True)
+                        await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
+                    if current_state:
+                        await state.clear()
+                    return
+                except Exception as e:
+                    logger.error(f"Error downloading album photo: {e}", exc_info=True)
+                    await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
+                    if current_state:
+                        await state.clear()
+                    return
 
         if current_state == BotStates.waiting_for_save:
             user_id = message.from_user.id if message.from_user else None
@@ -223,11 +250,32 @@ async def handle_photo(
     status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
     photo = message.photo[-1]  # Highest resolution
-    file_info = await bot.get_file(photo.file_id)
-    
-    file_stream = io.BytesIO()
-    await bot.download_file(file_info.file_path, destination=file_stream)
-    image_bytes = file_stream.getvalue()
+    if photo.file_size and photo.file_size > MAX_TELEGRAM_FILE_SIZE:
+        await safe_edit_text(status_msg, get_text("err_file_too_big", lang))
+        if current_state:
+            await state.clear()
+        return
+
+    try:
+        file_info = await bot.get_file(photo.file_id)
+        file_stream = io.BytesIO()
+        await bot.download_file(file_info.file_path, destination=file_stream)
+        image_bytes = file_stream.getvalue()
+    except TelegramBadRequest as e:
+        if is_file_too_big_error(e):
+            await safe_edit_text(status_msg, get_text("err_file_too_big", lang))
+        else:
+            logger.error(f"Telegram error downloading photo: {e}", exc_info=True)
+            await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
+        if current_state:
+            await state.clear()
+        return
+    except Exception as e:
+        logger.error(f"Error downloading photo: {e}", exc_info=True)
+        await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
+        if current_state:
+            await state.clear()
+        return
 
     # Cache in FSM context for action buttons
     await state.update_data(
@@ -291,10 +339,32 @@ async def handle_document(message: Message, bot: Bot, state: FSMContext, lang: s
         wait_text = get_text("status_analyzing_and_translating", lang)
     status_msg = await message.answer(wait_text, parse_mode="Markdown")
 
-    file_info = await bot.get_file(doc.file_id)
-    file_stream = io.BytesIO()
-    await bot.download_file(file_info.file_path, destination=file_stream)
-    file_bytes = file_stream.getvalue()
+    if doc.file_size and doc.file_size > MAX_TELEGRAM_FILE_SIZE:
+        await safe_edit_text(status_msg, get_text("err_file_too_big", lang))
+        if current_state:
+            await state.clear()
+        return
+
+    try:
+        file_info = await bot.get_file(doc.file_id)
+        file_stream = io.BytesIO()
+        await bot.download_file(file_info.file_path, destination=file_stream)
+        file_bytes = file_stream.getvalue()
+    except TelegramBadRequest as e:
+        if is_file_too_big_error(e):
+            await safe_edit_text(status_msg, get_text("err_file_too_big", lang))
+        else:
+            logger.error(f"Telegram error downloading document: {e}", exc_info=True)
+            await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
+        if current_state:
+            await state.clear()
+        return
+    except Exception as e:
+        logger.error(f"Error downloading document: {e}", exc_info=True)
+        await safe_edit_text(status_msg, get_text("err_processing", lang, error=str(e)))
+        if current_state:
+            await state.clear()
+        return
 
     # Save to cloud if save mode is active
     user_id = message.from_user.id if message.from_user else None

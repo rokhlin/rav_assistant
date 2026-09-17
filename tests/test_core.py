@@ -875,6 +875,155 @@ async def test_callback_save_note_preserves_full_content(tmp_path, monkeypatch):
     assert 'title: "Анализ счёта за электричество"' in saved_md
     assert 'tags: ["документ", "счета"]' in saved_md
 
+from unittest.mock import AsyncMock
+
+@pytest.mark.asyncio
+async def test_is_file_too_big_error():
+    from aiogram.exceptions import TelegramBadRequest
+    from bot.utils.telegram_helpers import is_file_too_big_error
+
+    err_big = TelegramBadRequest(method=AsyncMock(), message="Telegram server says - Bad Request: file is too big")
+    assert is_file_too_big_error(err_big) is True
+
+    err_other = TelegramBadRequest(method=AsyncMock(), message="Bad Request: message is not modified")
+    assert is_file_too_big_error(err_other) is False
+
+    err_non_tg = ValueError("file is too big")
+    assert is_file_too_big_error(err_non_tg) is False
+
+@pytest.mark.asyncio
+async def test_handle_document_file_too_big_proactive():
+    from bot.handlers.media import handle_document
+    from bot.texts import get_text
+
+    mock_msg = AsyncMock()
+    mock_status_msg = AsyncMock()
+    mock_msg.answer.return_value = mock_status_msg
+    mock_msg.document.file_size = 25 * 1024 * 1024  # 25 MB > 20 MB limit
+    mock_msg.document.file_name = "huge_manual.pdf"
+    mock_msg.document.mime_type = "application/pdf"
+    mock_msg.caption = None
+    mock_bot = AsyncMock()
+    mock_state = AsyncMock()
+    mock_state.get_state.return_value = None
+
+    await handle_document(mock_msg, mock_bot, mock_state, lang="ru")
+
+    # Verify bot.get_file was NEVER called due to proactive check
+    mock_bot.get_file.assert_not_called()
+    # Verify user was notified with err_file_too_big
+    expected_err = get_text("err_file_too_big", "ru")
+    mock_status_msg.edit_text.assert_called_once()
+    assert expected_err in mock_status_msg.edit_text.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_handle_document_file_too_big_telegram_error():
+    from aiogram.exceptions import TelegramBadRequest
+    from bot.handlers.media import handle_document
+    from bot.texts import get_text
+
+    mock_msg = AsyncMock()
+    mock_status_msg = AsyncMock()
+    mock_msg.answer.return_value = mock_status_msg
+    mock_msg.document.file_size = None  # Size not populated by client
+    mock_msg.document.file_id = "doc123"
+    mock_msg.document.file_name = "document.pdf"
+    mock_msg.document.mime_type = "application/pdf"
+    mock_msg.caption = None
+
+    mock_bot = AsyncMock()
+    mock_bot.get_file.side_effect = TelegramBadRequest(
+        method=AsyncMock(),
+        message="Telegram server says - Bad Request: file is too big"
+    )
+    mock_state = AsyncMock()
+    mock_state.get_state.return_value = None
+
+    await handle_document(mock_msg, mock_bot, mock_state, lang="ru")
+
+    mock_bot.get_file.assert_called_once_with("doc123")
+    expected_err = get_text("err_file_too_big", "ru")
+    mock_status_msg.edit_text.assert_called_once()
+    assert expected_err in mock_status_msg.edit_text.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_handle_voice_file_too_big():
+    from aiogram.exceptions import TelegramBadRequest
+    from bot.handlers.notes import handle_voice_message
+    from bot.texts import get_text
+
+    mock_msg = AsyncMock()
+    mock_status_msg = AsyncMock()
+    mock_msg.answer.return_value = mock_status_msg
+    mock_msg.voice.file_size = 30 * 1024 * 1024  # 30 MB
+    mock_msg.voice.file_id = "voice123"
+    mock_msg.audio = None
+    mock_bot = AsyncMock()
+    mock_state = AsyncMock()
+
+    await handle_voice_message(mock_msg, mock_bot, mock_state, lang="ru")
+
+    mock_bot.get_file.assert_not_called()
+    expected_err = get_text("err_file_too_big", "ru")
+    mock_status_msg.edit_text.assert_called_once()
+    assert expected_err in mock_status_msg.edit_text.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_handle_voice_telegram_bad_request():
+    from aiogram.exceptions import TelegramBadRequest
+    from bot.handlers.notes import handle_voice_message
+    from bot.texts import get_text
+
+    mock_msg = AsyncMock()
+    mock_status_msg = AsyncMock()
+    mock_msg.answer.return_value = mock_status_msg
+    mock_msg.voice.file_size = None
+    mock_msg.voice.file_id = "voice123"
+    mock_msg.audio = None
+    mock_bot = AsyncMock()
+    mock_bot.get_file.side_effect = TelegramBadRequest(
+        method=AsyncMock(),
+        message="Telegram server says - Bad Request: file is too big"
+    )
+    mock_state = AsyncMock()
+
+    await handle_voice_message(mock_msg, mock_bot, mock_state, lang="en")
+
+    mock_bot.get_file.assert_called_once_with("voice123")
+    expected_err = get_text("err_file_too_big", "en")
+    mock_status_msg.edit_text.assert_called_once()
+    assert expected_err in mock_status_msg.edit_text.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_global_error_handler_file_too_big():
+    from aiogram.types import ErrorEvent, Update, Message, User, Chat
+    from aiogram.exceptions import TelegramBadRequest
+    from main import global_error_handler
+    from bot.texts import get_text
+
+    mock_msg = AsyncMock(spec=Message)
+    mock_msg.from_user = User(id=777, is_bot=False, first_name="Tester")
+    mock_msg.chat = Chat(id=777, type="private")
+    mock_msg.reply = AsyncMock()
+
+    mock_update = AsyncMock(spec=Update)
+    mock_update.message = mock_msg
+    mock_update.callback_query = None
+
+    exc = TelegramBadRequest(
+        method=AsyncMock(),
+        message="Telegram server says - Bad Request: file is too big"
+    )
+    event = ErrorEvent(update=mock_update, exception=exc)
+
+    res = await global_error_handler(event)
+    assert res is True
+    mock_msg.reply.assert_called_once()
+    expected_err = get_text("err_file_too_big", "ru")
+    assert expected_err in mock_msg.reply.call_args[0][0]
+
+
+
 
 
 

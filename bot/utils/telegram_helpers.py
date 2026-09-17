@@ -6,6 +6,17 @@ from bot.texts import get_text
 
 logger = logging.getLogger(__name__)
 
+# Standard Telegram Bot API limit for getFile is 20 MB (20 * 1024 * 1024 bytes)
+MAX_TELEGRAM_FILE_SIZE = 20 * 1024 * 1024
+
+def is_file_too_big_error(exc: Exception) -> bool:
+    """Checks if an exception is a TelegramBadRequest caused by file size limit."""
+    if isinstance(exc, TelegramBadRequest):
+        msg = str(exc).lower()
+        return "file is too big" in msg or "file_is_too_big" in msg
+    return False
+
+
 def split_text(text: str, max_chunk_size: int = 3800) -> List[str]:
     """
     Splits long text into chunks by paragraph or line boundaries,
